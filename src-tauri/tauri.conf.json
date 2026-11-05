@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MouseGlow",
+  "version": "0.1.0",
+  "identifier": "com.mouseglow.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "鼠标流光",
+        "url": "index.html",
+        "width": 1120,
+        "height": 780,
+        "minWidth": 960,
+        "minHeight": 680,
+        "resizable": true,
+        "visible": false
+      },
+      {
+        "label": "overlay",
+        "title": "鼠标流光覆盖层",
+        "url": "overlay.html",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focusable": false,
+        "shadow": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/duangdangding/my_mouse/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVGNzZBOTRCRTA4QkQ3MjkKUldRcDE0dmdTNmwyNy9nNklZOXVZTDNMMGxQamp1Ny9sSEgvTGtGV2xsY0FROWRJVmJ6aS9EWE4K",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
