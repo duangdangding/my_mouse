@@ -34,9 +34,13 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart("v")
           $directory = "src-tauri/target/release/bundle/nsis"
           $archive = Get-ChildItem $directory -Filter "*.nsis.zip" | Select-Object -First 1
-          if (-not $archive) { throw "找不到 NSIS 更新压缩包" }
+          if (-not $archive) {
+            $archive = Get-ChildItem $directory -Filter "*-setup.exe" | Select-Object -First 1
+          }
+          if (-not $archive) { throw "找不到 NSIS 更新产物" }
           $signaturePath = "$($archive.FullName).sig"
-          if (-not (Test-Path $signaturePath)) { throw "找不到更新签名" }
+          if (-not (Test-Path $signaturePath)) { throw "找不到更新签名：$signaturePath" }
+          Write-Host "更新产物：$($archive.Name)"
           $manifest = @{
             version = $version
             notes = "鼠标流光 $version"
