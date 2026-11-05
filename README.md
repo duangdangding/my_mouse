@@ -44,7 +44,7 @@ npm run clippy              # Rust 严格检查
 npm run tauri build -- --debug --no-bundle
 ```
 
-Windows 配置保存在 `%LOCALAPPDATA%/MouseGlow/config.json`，macOS 配置保存在 `~/Library/Application Support/com.mouseglow.desktop/config.json`。网页预览的配置仅保存在浏览器 `localStorage`，不支持全局鼠标监听、托盘和软件更新。
+Windows 配置保存在 `%LOCALAPPDATA%/MouseGlow/config.json`，macOS 配置保存在 `~/Library/Application Support/MouseGlow/config.json`。网页预览的配置仅保存在浏览器 `localStorage`，不支持全局鼠标监听、托盘和软件更新。
 
 ## 发布与更新
 

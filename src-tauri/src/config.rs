@@ -335,6 +335,8 @@ mod tests {
     #[test]
     fn config_uses_user_local_data_directory() {
         let store = ConfigStore::new().expect("配置目录应可创建");
-        assert!(store.path().ends_with("MouseGlow\\config.json"));
+        assert!(store
+            .path()
+            .ends_with(PathBuf::from("MouseGlow").join("config.json")));
     }
 }

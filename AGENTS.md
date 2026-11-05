@@ -9,7 +9,7 @@
 - Windows 使用低级鼠标钩子；macOS 使用只读 `CGEventTap`，需要输入监控权限，不得拦截事件。
 - macOS 登录启动项使用 `~/Library/LaunchAgents/com.mouseglow.desktop.plist`，修改后下一次登录生效。
 - 新预设字段需同步更新 TypeScript 类型、Rust 配置、默认值、边界校验和 README。
-- 配置保存在 Windows 的 `%LOCALAPPDATA%/MouseGlow/`，macOS 的 `~/Library/Application Support/com.mouseglow.desktop/`，不得上传鼠标轨迹或点击数据。
+- 配置保存在 Windows 的 `%LOCALAPPDATA%/MouseGlow/`，macOS 的 `~/Library/Application Support/MouseGlow/`，不得上传鼠标轨迹或点击数据。
 
 ## 提交前检查
 
