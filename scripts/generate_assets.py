@@ -17,5 +17,6 @@ for index, (x, y, radius, alpha) in enumerate([
 points = [(420, 215), (720, 680), (555, 615), (505, 790), (425, 755), (472, 585), (345, 555)]
 draw.polygon(points, fill=(255, 255, 255, 255))
 image.resize((256, 256), Image.Resampling.LANCZOS).save(OUTPUT / "icon.png")
+image.save(OUTPUT / "icon.icns", sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)])
 image.save(OUTPUT / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 print(OUTPUT)

@@ -1,7 +1,7 @@
 [package]
 name = "mouse-glow"
-version = "0.1.0"
-description = "低开销的 Windows 鼠标拖尾与点击特效"
+version = "0.2.0"
+description = "低开销的 Windows／macOS 鼠标拖尾与点击特效"
 authors = ["Mouse Glow"]
 edition = "2021"
 
@@ -24,3 +24,7 @@ dirs = "6"
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.25"

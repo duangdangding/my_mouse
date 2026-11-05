@@ -2139,8 +2139,10 @@ dependencies = [
 
 [[package]]
 name = "mouse-glow"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "core-foundation 0.10.1",
+ "core-graphics",
  "dirs 6.0.0",
  "serde",
  "serde_json",

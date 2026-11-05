@@ -146,6 +146,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .performance-tip > span { color: #7ed9e9; }
 .performance-tip strong { font-size: 11px; font-weight: 500; color: #a9c7cf; }
 .performance-tip p { margin: 5px 0 0; color: #657c86; font-size: 9px; line-height: 1.7; }
+.permission-card { grid-column: 1 / -1; }
+.permission-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 8px; }
+.permission-row .secondary-button { flex: 0 0 auto; padding: 0 14px; }
 
 .about-layout { display: grid; grid-template-columns: minmax(350px, 1.4fr) minmax(220px, .8fr); gap: 18px; max-width: 900px; margin: 25px auto; }
 .about-card { display: flex; flex-direction: column; align-items: center; padding: 35px; text-align: center; }

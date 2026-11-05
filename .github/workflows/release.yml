@@ -1,4 +1,4 @@
-name: 发布 Windows 安装包与更新
+name: 发布桌面安装包与更新
 
 on:
   push:
@@ -8,12 +8,13 @@ on:
 permissions:
   contents: write
 
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
 jobs:
   windows:
     runs-on: windows-latest
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,36 +29,86 @@ jobs:
       - run: npm test
       - run: npm run clippy
       - run: npm run tauri build -- --bundles nsis
-      - name: 生成更新清单
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          $directory = "src-tauri/target/release/bundle/nsis"
-          $archive = Get-ChildItem $directory -Filter "*.nsis.zip" | Select-Object -First 1
-          if (-not $archive) {
-            $archive = Get-ChildItem $directory -Filter "*-setup.exe" | Select-Object -First 1
-          }
-          if (-not $archive) { throw "找不到 NSIS 更新产物" }
-          $signaturePath = "$($archive.FullName).sig"
-          if (-not (Test-Path $signaturePath)) { throw "找不到更新签名：$signaturePath" }
-          Write-Host "更新产物：$($archive.Name)"
-          $manifest = @{
-            version = $version
-            notes = "鼠标流光 $version"
-            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-            platforms = @{
-              "windows-x86_64" = @{
-                signature = (Get-Content $signaturePath -Raw).Trim()
-                url = "https://github.com/duangdangding/my_mouse/releases/download/${{ github.ref_name }}/$($archive.Name)"
-              }
-            }
-          }
-          $manifest | ConvertTo-Json -Depth 6 | Set-Content latest.json -Encoding utf8
-      - uses: softprops/action-gh-release@v2
+      - name: 生成 Windows 更新清单
+        shell: bash
+        run: node scripts/update-manifest.mjs create "${{ github.ref_name }}" windows-x86_64 src-tauri/target/release/bundle/nsis manifest-windows-x86_64.json
+      - name: 上传 Windows 发布产物
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: release-windows-x86_64
+          if-no-files-found: error
+          path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/*.sig
-            latest.json
-          generate_release_notes: true
+            manifest-windows-x86_64.json
+
+  macos:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            platform: darwin-aarch64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: darwin-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: npm ci
+      - run: npm run release:check -- "${{ github.ref_name }}"
+      - run: npm run build
+      - run: npm test
+      - run: npm run clippy
+      - run: npm run tauri build -- --target ${{ matrix.target }} --bundles app,dmg
+      - name: 生成 macOS 更新清单
+        run: node scripts/update-manifest.mjs create "${{ github.ref_name }}" "${{ matrix.platform }}" "src-tauri/target/${{ matrix.target }}/release/bundle/macos" "manifest-${{ matrix.platform }}.json"
+      - name: 上传 macOS 发布产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.sig
+            manifest-${{ matrix.platform }}.json
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: 下载全部平台产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: .generated/release
+          merge-multiple: true
+      - name: 合并三平台更新清单
+        run: node scripts/update-manifest.mjs merge .generated/release .generated/release/latest.json
+      - name: 准备 Release 说明
+        run: node scripts/update-manifest.mjs notes "${{ github.ref_name }}" .generated/RELEASE_NOTES.md
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: .generated/RELEASE_NOTES.md
+          files: |
+            .generated/release/*.exe
+            .generated/release/*.nsis.zip
+            .generated/release/*.dmg
+            .generated/release/*.app.tar.gz
+            .generated/release/*.sig
+            .generated/release/latest.json

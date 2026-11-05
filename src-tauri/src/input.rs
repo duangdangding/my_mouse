@@ -10,11 +10,8 @@ pub fn update_config(config: &AppConfig) {
     CLICK_ENABLED.store(config.master_enabled && config.click_enabled, Ordering::Release);
 }
 
-#[cfg(not(windows))]
-pub fn start(_app: AppHandle) {}
-
-#[cfg(windows)]
-mod platform {
+#[cfg(any(windows, target_os = "macos"))]
+mod common {
     use super::*;
     use serde::Serialize;
     use std::{
@@ -26,13 +23,6 @@ mod platform {
         time::{Duration, Instant},
     };
     use tauri::Emitter;
-    use windows::Win32::{
-        Foundation::{HMODULE, LPARAM, LRESULT, WPARAM},
-        UI::WindowsAndMessaging::{
-            CallNextHookEx, GetMessageW, SetWindowsHookExW, MSLLHOOKSTRUCT, MSG, WH_MOUSE_LL,
-            WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN,
-        },
-    };
 
     #[derive(Clone, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -57,51 +47,30 @@ mod platform {
     static SIGNAL_LOCK: Mutex<()> = Mutex::new(());
     static SIGNAL: Condvar = Condvar::new();
 
-    pub fn start(app: AppHandle) {
-        thread::spawn(move || {
-            let emitter = app.clone();
-            thread::spawn(move || emit_loop(emitter));
-            unsafe {
-                let hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), HMODULE::default(), 0)
-                    .expect("无法安装全局鼠标钩子");
-                let mut message = MSG::default();
-                while GetMessageW(&mut message, None, 0, 0).into() {}
-                let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(hook);
-            }
-        });
+    pub fn record_move(x: i32, y: i32) {
+        if !MOVE_ENABLED.load(Ordering::Acquire) {
+            return;
+        }
+        X.store(x, Ordering::Relaxed);
+        Y.store(y, Ordering::Relaxed);
+        SEQUENCE.fetch_add(1, Ordering::Release);
+        SIGNAL.notify_one();
     }
 
-    unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code >= 0 && lparam.0 != 0 {
-            let data = &*(lparam.0 as *const MSLLHOOKSTRUCT);
-            let message = wparam.0 as u32;
-            if message == WM_MOUSEMOVE && MOVE_ENABLED.load(Ordering::Acquire) {
-                X.store(data.pt.x, Ordering::Relaxed);
-                Y.store(data.pt.y, Ordering::Relaxed);
-                SEQUENCE.fetch_add(1, Ordering::Release);
-                SIGNAL.notify_one();
-            } else if CLICK_ENABLED.load(Ordering::Acquire) {
-                let button = match message {
-                    WM_LBUTTONDOWN => Some("left"),
-                    WM_RBUTTONDOWN => Some("right"),
-                    WM_MBUTTONDOWN => Some("middle"),
-                    _ => None,
-                };
-                if let Some(button) = button {
-                    let mut clicks = CLICKS.lock().unwrap_or_else(|error| error.into_inner());
-                    if clicks.len() < 32 {
-                        clicks.push(ClickEvent {
-                            x: data.pt.x,
-                            y: data.pt.y,
-                            button,
-                        });
-                    }
-                    drop(clicks);
-                    SIGNAL.notify_one();
-                }
-            }
+    pub fn record_click(x: i32, y: i32, button: &'static str) {
+        if !CLICK_ENABLED.load(Ordering::Acquire) {
+            return;
         }
-        CallNextHookEx(None, code, wparam, lparam)
+        let mut clicks = CLICKS.lock().unwrap_or_else(|error| error.into_inner());
+        if clicks.len() < 32 {
+            clicks.push(ClickEvent { x, y, button });
+        }
+        drop(clicks);
+        SIGNAL.notify_one();
+    }
+
+    pub fn spawn_emitter(app: AppHandle) {
+        thread::spawn(move || emit_loop(app));
     }
 
     fn emit_loop(app: AppHandle) {
@@ -143,4 +112,134 @@ mod platform {
 }
 
 #[cfg(windows)]
-pub use platform::start;
+mod platform {
+    use super::*;
+    use std::thread;
+    use windows::Win32::{
+        Foundation::{HMODULE, LPARAM, LRESULT, WPARAM},
+        UI::WindowsAndMessaging::{
+            CallNextHookEx, GetMessageW, SetWindowsHookExW, MSLLHOOKSTRUCT, MSG, WH_MOUSE_LL,
+            WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN,
+        },
+    };
+
+    pub fn start(app: AppHandle) {
+        super::common::spawn_emitter(app);
+        thread::spawn(|| unsafe {
+            let hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), HMODULE::default(), 0)
+                .expect("无法安装全局鼠标钩子");
+            let mut message = MSG::default();
+            while GetMessageW(&mut message, None, 0, 0).into() {}
+            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(hook);
+        });
+    }
+
+    pub fn permission_granted() -> bool {
+        true
+    }
+
+    unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code >= 0 && lparam.0 != 0 {
+            let data = &*(lparam.0 as *const MSLLHOOKSTRUCT);
+            let message = wparam.0 as u32;
+            if message == WM_MOUSEMOVE {
+                super::common::record_move(data.pt.x, data.pt.y);
+            } else {
+                let button = match message {
+                    WM_LBUTTONDOWN => Some("left"),
+                    WM_RBUTTONDOWN => Some("right"),
+                    WM_MBUTTONDOWN => Some("middle"),
+                    _ => None,
+                };
+                if let Some(button) = button {
+                    super::common::record_click(data.pt.x, data.pt.y, button);
+                }
+            }
+        }
+        CallNextHookEx(None, code, wparam, lparam)
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod platform {
+    use super::*;
+    use core_foundation::runloop::CFRunLoop;
+    use core_graphics::event::{
+        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
+        CallbackResult,
+    };
+    use std::thread;
+    use tauri::Emitter;
+
+    pub fn start(app: AppHandle) {
+        super::common::spawn_emitter(app.clone());
+        thread::spawn(move || {
+            let result = CGEventTap::with_enabled(
+                CGEventTapLocation::HID,
+                CGEventTapPlacement::HeadInsertEventTap,
+                CGEventTapOptions::ListenOnly,
+                vec![
+                    CGEventType::MouseMoved,
+                    CGEventType::LeftMouseDragged,
+                    CGEventType::RightMouseDragged,
+                    CGEventType::OtherMouseDragged,
+                    CGEventType::LeftMouseDown,
+                    CGEventType::RightMouseDown,
+                    CGEventType::OtherMouseDown,
+                ],
+                |_proxy, event_type, event| {
+                    let location = event.location();
+                    let x = location.x.round() as i32;
+                    let y = location.y.round() as i32;
+                    match event_type {
+                        CGEventType::MouseMoved
+                        | CGEventType::LeftMouseDragged
+                        | CGEventType::RightMouseDragged
+                        | CGEventType::OtherMouseDragged => {
+                            super::common::record_move(x, y);
+                        }
+                        CGEventType::LeftMouseDown => {
+                            super::common::record_click(x, y, "left");
+                        }
+                        CGEventType::RightMouseDown => {
+                            super::common::record_click(x, y, "right");
+                        }
+                        CGEventType::OtherMouseDown => {
+                            super::common::record_click(x, y, "middle");
+                        }
+                        _ => {}
+                    }
+                    CallbackResult::Keep
+                },
+                CFRunLoop::run_current,
+            );
+            if result.is_err() {
+                let _ = app.emit("input-permission-required", ());
+            }
+        });
+    }
+
+    pub fn permission_granted() -> bool {
+        CGEventTap::new(
+            CGEventTapLocation::HID,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            vec![CGEventType::MouseMoved],
+            |_proxy, _event_type, _event| CallbackResult::Keep,
+        )
+        .is_ok()
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+mod platform {
+    use super::*;
+
+    pub fn start(_app: AppHandle) {}
+
+    pub fn permission_granted() -> bool {
+        true
+    }
+}
+
+pub use platform::{permission_granted, start};

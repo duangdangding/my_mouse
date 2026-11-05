@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import { defaultConfig, DEFAULT_CONFIG } from "./defaults";
 import { EffectsRenderer } from "./renderer";
 import { activeClick, activeTrail, isTauri } from "./types";
@@ -27,7 +28,7 @@ app.innerHTML = `
         <span class="status-dot"></span>
         <div><strong>轻盈运行</strong><small>空闲时自动停止绘制</small></div>
       </div>
-      <div class="version" id="version">版本 0.1.0</div>
+      <div class="version" id="version">版本 0.2.0</div>
     </aside>
     <main class="main">
       <header class="topbar">
@@ -43,6 +44,7 @@ app.innerHTML = `
 const content = document.querySelector<HTMLDivElement>("#content")!;
 const saveState = document.querySelector<HTMLDivElement>("#save-state")!;
 let config = defaultConfig();
+let desktopPlatform = "web";
 let activeTab: Tab = "trail";
 let saveTimer = 0;
 let preview: EffectsRenderer | undefined;
@@ -394,12 +396,34 @@ function generalSettings(): HTMLElement {
   startupHead.append(startupTitle, make("span", "settings-icon", "↻"));
   startup.append(
     startupHead,
-    toggleControl("开机自动启动", "登录 Windows 后自动运行鼠标流光", config.launchAtStartup, (value) => { config.launchAtStartup = value; changed(); }),
+    toggleControl("开机自动启动", "登录系统后自动运行鼠标流光", config.launchAtStartup, (value) => { config.launchAtStartup = value; changed(); }),
     toggleControl("静默启动", "开机启动时不显示设置窗口，仅显示托盘图标", config.silentStart, (value) => { config.silentStart = value; changed(); }),
   );
+  wrapper.append(performance, startup);
+  if (desktopPlatform === "macos") {
+    const permission = make<HTMLDivElement>("div", "settings-card permission-card");
+    const heading = make<HTMLDivElement>("div", "settings-card-head");
+    const title = make<HTMLDivElement>("div");
+    title.append(make("strong", "", "macOS 输入监控权限"), make("small", "", "只读监听鼠标移动和按键，不会拦截系统事件"));
+    heading.append(title, make("span", "settings-icon", "⌘"));
+    const row = make<HTMLDivElement>("div", "permission-row");
+    const status = make<HTMLDivElement>("div", "toggle-copy");
+    status.append(make("strong", "", "正在检查权限…"), make("small", "", "授权后需要退出并重新打开鼠标流光"));
+    const button = make<HTMLButtonElement>("button", "secondary-button", "打开权限设置");
+    button.addEventListener("click", async () => {
+      await invoke("open_input_settings");
+      toast("请在“输入监控”中启用鼠标流光，然后重启应用");
+    });
+    row.append(status, button);
+    permission.append(heading, row);
+    wrapper.append(permission);
+    void invoke<boolean>("input_permission_granted").then((granted) => {
+      status.querySelector("strong")!.textContent = granted ? "权限已授予" : "需要输入监控权限";
+    });
+  }
   const tip = make<HTMLDivElement>("div", "performance-tip");
   tip.innerHTML = `<span>✦</span><div><strong>低开销设计</strong><p>鼠标事件按 120 Hz 合并，粒子使用固定对象池；无特效时没有绘制循环。高回报率鼠标也不会直接触发逐事件渲染。</p></div>`;
-  wrapper.append(performance, startup, tip);
+  wrapper.append(tip);
   return wrapper;
 }
 
@@ -408,8 +432,8 @@ function aboutSettings(): HTMLElement {
   const card = make<HTMLDivElement>("div", "about-card");
   const mark = make<HTMLDivElement>("div", "about-mark", "✦");
   const title = make<HTMLHeadingElement>("h2", "", "鼠标流光");
-  const version = make<HTMLParagraphElement>("p", "about-version", `Mouse Glow · 版本 ${app.dataset.version ?? "0.1.0"}`);
-  const description = make<HTMLParagraphElement>("p", "about-description", "一款轻盈、低占用的 Windows 鼠标拖尾与点击特效工具。设置保存在本机，不上传任何鼠标轨迹或点击数据。");
+  const version = make<HTMLParagraphElement>("p", "about-version", `Mouse Glow · 版本 ${app.dataset.version ?? "0.2.0"}`);
+  const description = make<HTMLParagraphElement>("p", "about-description", "一款轻盈、低占用的 Windows／macOS 鼠标拖尾与点击特效工具。设置保存在本机，不上传任何鼠标轨迹或点击数据。");
   const updateButton = make<HTMLButtonElement>("button", "primary-button", "检查更新");
   const status = make<HTMLDivElement>("div", "update-status", "更新由签名安装包保护，下载前会验证发布信息。");
   const progress = make<HTMLProgressElement>("progress");
@@ -487,8 +511,14 @@ addEventListener("beforeunload", () => {
 });
 
 config = await loadConfig();
-render();
 if (isTauri) {
-  app.dataset.version = await getVersion();
+  [app.dataset.version, desktopPlatform] = await Promise.all([
+    getVersion(),
+    invoke<string>("get_platform"),
+  ]);
   document.querySelector("#version")!.textContent = `版本 ${app.dataset.version}`;
+  await listen("input-permission-required", () => {
+    toast("请在 macOS“输入监控”中授权，然后重启鼠标流光", true);
+  });
 }
+render();

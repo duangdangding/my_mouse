@@ -8,7 +8,7 @@ use std::sync::RwLock;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WindowEvent,
+    AppHandle, Emitter, Manager, State, WindowEvent,
 };
 
 struct SharedConfig {
@@ -62,20 +62,38 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_platform() -> &'static str {
+    std::env::consts::OS
+}
+
+#[tauri::command]
+fn input_permission_granted() -> bool {
+    input::permission_granted()
+}
+
+#[tauri::command]
+fn open_input_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+        .spawn()
+        .map_err(|error| format!("无法打开输入监控设置：{error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn sync_overlay_bounds(app: AppHandle) -> Result<ScreenBounds, String> {
-    let bounds = virtual_screen_bounds();
+    let bounds = virtual_screen_bounds(&app);
     let overlay = app
         .get_webview_window("overlay")
         .ok_or_else(|| "找不到特效覆盖层".to_string())?;
-    overlay
-        .set_position(PhysicalPosition::new(bounds.x, bounds.y))
-        .map_err(|error| format!("无法设置覆盖层位置：{error}"))?;
-    overlay
-        .set_size(PhysicalSize::new(bounds.width, bounds.height))
-        .map_err(|error| format!("无法设置覆盖层尺寸：{error}"))?;
+    set_overlay_bounds(&overlay, bounds)?;
     overlay
         .set_ignore_cursor_events(true)
         .map_err(|error| format!("无法设置鼠标穿透：{error}"))?;
+    overlay
+        .set_visible_on_all_workspaces(true)
+        .map_err(|error| format!("无法设置跨桌面显示：{error}"))?;
     overlay
         .show()
         .map_err(|error| format!("无法显示特效覆盖层：{error}"))?;
@@ -84,7 +102,33 @@ fn sync_overlay_bounds(app: AppHandle) -> Result<ScreenBounds, String> {
 }
 
 #[cfg(windows)]
-fn virtual_screen_bounds() -> ScreenBounds {
+fn set_overlay_bounds(
+    overlay: &tauri::WebviewWindow,
+    bounds: ScreenBounds,
+) -> Result<(), String> {
+    overlay
+        .set_position(tauri::PhysicalPosition::new(bounds.x, bounds.y))
+        .map_err(|error| format!("无法设置覆盖层位置：{error}"))?;
+    overlay
+        .set_size(tauri::PhysicalSize::new(bounds.width, bounds.height))
+        .map_err(|error| format!("无法设置覆盖层尺寸：{error}"))
+}
+
+#[cfg(not(windows))]
+fn set_overlay_bounds(
+    overlay: &tauri::WebviewWindow,
+    bounds: ScreenBounds,
+) -> Result<(), String> {
+    overlay
+        .set_position(tauri::LogicalPosition::new(bounds.x, bounds.y))
+        .map_err(|error| format!("无法设置覆盖层位置：{error}"))?;
+    overlay
+        .set_size(tauri::LogicalSize::new(bounds.width, bounds.height))
+        .map_err(|error| format!("无法设置覆盖层尺寸：{error}"))
+}
+
+#[cfg(windows)]
+fn virtual_screen_bounds(_app: &AppHandle) -> ScreenBounds {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
         SM_YVIRTUALSCREEN,
@@ -100,12 +144,39 @@ fn virtual_screen_bounds() -> ScreenBounds {
 }
 
 #[cfg(not(windows))]
-fn virtual_screen_bounds() -> ScreenBounds {
+fn virtual_screen_bounds(app: &AppHandle) -> ScreenBounds {
+    let mut left = i32::MAX;
+    let mut top = i32::MAX;
+    let mut right = i32::MIN;
+    let mut bottom = i32::MIN;
+    if let Ok(monitors) = app.available_monitors() {
+        for monitor in monitors {
+            let scale = monitor.scale_factor();
+            let position = monitor.position();
+            let size = monitor.size();
+            let x = (position.x as f64 / scale).round() as i32;
+            let y = (position.y as f64 / scale).round() as i32;
+            let width = (size.width as f64 / scale).round().max(1.0) as i32;
+            let height = (size.height as f64 / scale).round().max(1.0) as i32;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + width);
+            bottom = bottom.max(y + height);
+        }
+    }
+    if left == i32::MAX {
+        return ScreenBounds {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
+        };
+    }
     ScreenBounds {
-        x: 0,
-        y: 0,
-        width: 1280,
-        height: 720,
+        x: left,
+        y: top,
+        width: (right - left).max(1) as u32,
+        height: (bottom - top).max(1) as u32,
     }
 }
 
@@ -144,6 +215,9 @@ pub fn run() {
             get_config,
             save_config,
             show_settings,
+            get_platform,
+            input_permission_granted,
+            open_input_settings,
             sync_overlay_bounds
         ])
         .setup(|app| {
