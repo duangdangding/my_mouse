@@ -164,6 +164,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .permission-card { grid-column: 1 / -1; }
 .permission-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 8px; }
 .permission-row .secondary-button { flex: 0 0 auto; padding: 0 14px; }
+.config-location-card { grid-column: 1 / -1; }
+.config-path { display: block; padding: 11px 13px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.025); color: #b9c0d5; font-family: Consolas, monospace; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; user-select: text; }
+.config-location-note { margin-top: 9px; color: #858ca2; font-size: 11px; line-height: 1.6; }
+.config-location-actions { display: flex; gap: 9px; margin-top: 16px; }
+.config-location-actions .secondary-button { padding: 0 14px; }
+.config-location-explanation { margin: 14px 0 0; color: #697187; font-size: 10px; line-height: 1.7; }
 
 .about-layout { display: grid; grid-template-columns: minmax(350px, 1.4fr) minmax(220px, .8fr); gap: 18px; max-width: 900px; margin: 25px auto; }
 .about-card { display: flex; flex-direction: column; align-items: center; padding: 35px; text-align: center; }
@@ -176,7 +182,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .primary-button { min-width: 140px; height: 40px; border: 0; border-radius: 8px; background: linear-gradient(135deg, #9586fa, #7564df); color: white; font-size: 13px; box-shadow: 0 7px 20px rgba(119,94,255,.15); }
 .primary-button:hover { filter: brightness(1.08); }
 .primary-button:disabled { cursor: wait; opacity: .55; }
-.about-card progress { width: 220px; height: 4px; margin-top: 18px; accent-color: var(--purple); }
+.update-progress { width: min(100%, 320px); margin-top: 20px; }
+.update-progress[hidden] { display: none; }
+.update-progress-track { width: 100%; height: 8px; overflow: hidden; border-radius: 999px; background: #292d3d; box-shadow: inset 0 1px 2px rgba(0,0,0,.25); }
+.update-progress-fill { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7564df, #aca0ff); transition: width .18s ease; }
+.update-progress-fill.indeterminate { width: 35%; animation: update-download 1.25s ease-in-out infinite; }
+.update-progress-meta { display: flex; justify-content: space-between; gap: 12px; min-height: 18px; margin-top: 8px; color: #929ab0; font-size: 11px; line-height: 1.6; }
+.update-progress-value { flex: 0 0 auto; color: #c4bbfa; font-variant-numeric: tabular-nums; }
 .update-status { min-height: 30px; margin-top: 16px; color: #858da3; font-size: 11px; line-height: 1.7; }
 .privacy-card { align-self: start; padding: 24px; }
 .privacy-card strong { font-size: 14px; }
@@ -186,6 +198,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .toast.error { border-color: rgba(255,119,136,.3); color: #ffb4bd; }
 
 @keyframes pulse { 50% { opacity: .35; } }
+@keyframes update-download {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-progress-fill.indeterminate { width: 100%; animation: none; opacity: .65; }
+}
 
 @media (max-width: 900px) {
   .sidebar { width: 176px; flex-basis: 176px; }

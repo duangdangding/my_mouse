@@ -1,6 +1,6 @@
 [package]
 name = "mouse-glow"
-version = "0.3.2"
+version = "0.4.0"
 description = "低开销的 Windows／macOS 鼠标拖尾与点击特效"
 authors = ["Mouse Glow"]
 edition = "2021"
@@ -21,6 +21,7 @@ tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

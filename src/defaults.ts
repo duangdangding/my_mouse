@@ -12,14 +12,15 @@ const PARTICLE_DEFAULTS: ParticleCustomization = {
 
 type TrailInput = Omit<TrailPreset, keyof ParticleCustomization | "followMovement"> &
   Partial<ParticleCustomization & Pick<TrailPreset, "followMovement">>;
-type ClickInput = Omit<ClickPreset, keyof ParticleCustomization> & Partial<ParticleCustomization>;
+type ClickInput = Omit<ClickPreset, keyof ParticleCustomization | "singleImage" | "singleImageRotationSpeed"> &
+  Partial<ParticleCustomization & Pick<ClickPreset, "singleImage" | "singleImageRotationSpeed">>;
 
 function trail(preset: TrailInput): TrailPreset {
   return { ...PARTICLE_DEFAULTS, followMovement: false, ...preset };
 }
 
 function click(preset: ClickInput): ClickPreset {
-  return { ...PARTICLE_DEFAULTS, ...preset };
+  return { ...PARTICLE_DEFAULTS, singleImage: false, singleImageRotationSpeed: 0.8, ...preset };
 }
 
 export const DEFAULT_CONFIG: AppConfig = {

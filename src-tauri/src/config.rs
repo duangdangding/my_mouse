@@ -68,6 +68,8 @@ pub struct ClickPreset {
     pub left: bool,
     pub right: bool,
     pub middle: bool,
+    pub single_image: bool,
+    pub single_image_rotation_speed: f32,
     pub custom_text: String,
     pub custom_image: String,
     pub original_color: bool,
@@ -92,6 +94,8 @@ impl Default for ClickPreset {
             left: true,
             right: false,
             middle: false,
+            single_image: false,
+            single_image_rotation_speed: 0.8,
             custom_text: "✦".into(),
             custom_image: String::new(),
             original_color: false,
@@ -378,6 +382,7 @@ impl AppConfig {
             preset.duration = preset.duration.clamp(150, 2000);
             preset.glow = finite(preset.glow, 1.0).clamp(0.2, 2.0);
             preset.count = preset.count.clamp(6, 96);
+            preset.single_image_rotation_speed = finite(preset.single_image_rotation_speed, 0.8).clamp(-12.0, 12.0);
             preset.custom_text = clean_particle_text(&preset.custom_text);
             clean_custom_image(&mut preset.custom_image);
             preset.size_jitter = finite(preset.size_jitter, 0.25).clamp(0.0, 0.75);
@@ -474,6 +479,10 @@ fn clean_color(color: &mut String, fallback: &str) {
 
 pub struct ConfigStore {
     path: PathBuf,
+    default_path: PathBuf,
+    legacy_path: PathBuf,
+    backup_path: PathBuf,
+    location_path: PathBuf,
 }
 
 impl ConfigStore {
@@ -482,35 +491,143 @@ impl ConfigStore {
             .ok_or_else(|| "无法确定本机应用数据目录".to_string())?
             .join("MouseGlow");
         fs::create_dir_all(&directory).map_err(|error| format!("无法创建配置目录：{error}"))?;
+        let legacy_path = directory.join("config.json");
+        let default_path = Self::default_config_path(&legacy_path);
+        let location_path = directory.join("config-location");
+        let path = fs::read_to_string(&location_path)
+            .ok()
+            .map(|content| PathBuf::from(content.trim()))
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| default_path.clone());
         Ok(Self {
-            path: directory.join("config.json"),
+            path,
+            default_path,
+            legacy_path,
+            backup_path: directory.join("config-backup.json"),
+            location_path,
         })
     }
 
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    pub fn default_path(&self) -> &std::path::Path {
+        &self.default_path
+    }
+
+    pub fn is_custom(&self) -> bool {
+        self.path != self.default_path
+    }
+
     pub fn load(&self) -> AppConfig {
-        let mut config = fs::read_to_string(&self.path)
-            .ok()
-            .and_then(|content| serde_json::from_str::<AppConfig>(&content).ok())
+        if let Some(mut config) = Self::read(&self.path) {
+            config.normalize();
+            return config;
+        }
+        let mut config = Self::read(&self.backup_path)
+            .or_else(|| Self::read(&self.legacy_path))
             .unwrap_or_default();
         config.normalize();
+        let _ = self.save(&config);
         config
     }
 
     pub fn save(&self, config: &AppConfig) -> Result<(), String> {
         let content = serde_json::to_string_pretty(config)
             .map_err(|error| format!("无法序列化设置：{error}"))?;
-        let temporary = self.path.with_extension("json.tmp");
-        fs::write(&temporary, content).map_err(|error| format!("无法写入设置：{error}"))?;
-        if self.path.exists() {
-            fs::remove_file(&self.path).map_err(|error| format!("无法替换旧设置：{error}"))?;
-        }
-        fs::rename(temporary, &self.path).map_err(|error| format!("无法保存设置：{error}"))
+        write_text(&self.path, &content)?;
+        write_text(&self.backup_path, &content)
     }
 
-    #[cfg(test)]
-    fn path(&self) -> &PathBuf {
-        &self.path
+    pub fn set_directory(
+        &mut self,
+        directory: &std::path::Path,
+        config: &AppConfig,
+    ) -> Result<(), String> {
+        if !directory.is_absolute() {
+            return Err("配置目录必须是绝对路径".to_string());
+        }
+        let next_path = directory.join("config.json");
+        if next_path == self.backup_path || next_path == self.location_path {
+            return Err("不能使用应用保留的配置文件路径".to_string());
+        }
+        let previous = self.path.clone();
+        self.path = next_path;
+        if let Err(error) = self.save(config).and_then(|()| self.write_location()) {
+            self.path = previous;
+            return Err(error);
+        }
+        Ok(())
     }
+
+    pub fn reset_directory(&mut self, config: &AppConfig) -> Result<(), String> {
+        let previous = self.path.clone();
+        self.path = self.default_path.clone();
+        if let Err(error) = self.save(config) {
+            self.path = previous;
+            return Err(error);
+        }
+        if self.location_path.exists() {
+            if let Err(error) = fs::remove_file(&self.location_path) {
+                self.path = previous;
+                return Err(format!("无法清除自定义配置路径：{error}"));
+            }
+        }
+        Ok(())
+    }
+
+    fn default_config_path(fallback: &std::path::Path) -> PathBuf {
+        std::env::current_exe()
+            .ok()
+            .and_then(|executable| executable.parent().map(|directory| directory.to_path_buf()))
+            .filter(|directory| Self::directory_writable(directory))
+            .map(|directory| directory.join("config.json"))
+            .unwrap_or_else(|| fallback.to_path_buf())
+    }
+
+    fn directory_writable(directory: &std::path::Path) -> bool {
+        if !directory.is_dir() {
+            return false;
+        }
+        let probe = directory.join(format!(".mouse-glow-write-test-{}", std::process::id()));
+        let writable = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe)
+            .is_ok();
+        if writable {
+            let _ = fs::remove_file(probe);
+        }
+        writable
+    }
+
+    fn read(path: &std::path::Path) -> Option<AppConfig> {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|content| serde_json::from_str(&content).ok())
+    }
+
+    fn write_location(&self) -> Result<(), String> {
+        write_text(&self.location_path, &self.path.to_string_lossy())
+    }
+}
+
+fn write_text(path: &std::path::Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("无法确定配置目录：{}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("无法创建配置目录 {}：{error}", parent.display()))?;
+    let temporary = path.with_extension("tmp");
+    fs::write(&temporary, content)
+        .map_err(|error| format!("无法写入配置 {}：{error}", temporary.display()))?;
+    if path.exists() {
+        fs::remove_file(path)
+            .map_err(|error| format!("无法替换旧配置 {}：{error}", path.display()))?;
+    }
+    fs::rename(temporary, path)
+        .map_err(|error| format!("无法保存配置 {}：{error}", path.display()))
 }
 
 #[cfg(test)]
@@ -599,6 +716,7 @@ mod tests {
         config.trails[0].fade_power = 20.0;
         config.clicks[0].shape = "snowflake".into();
         config.clicks[0].custom_image = "data:image/png;base64,AA==".into();
+        config.clicks[0].single_image_rotation_speed = 100.0;
         config.normalize();
         assert_eq!(config.trails[0].shape, "image");
         assert_eq!(config.trails[0].custom_text, "🌸🌸🌸🌸");
@@ -609,6 +727,7 @@ mod tests {
         assert_eq!(config.trails[0].fade_power, 3.0);
         assert_eq!(config.clicks[0].shape, "snowflake");
         assert_eq!(config.clicks[0].custom_image, "data:image/png;base64,AA==");
+        assert_eq!(config.clicks[0].single_image_rotation_speed, 12.0);
     }
 
     #[test]
@@ -620,13 +739,91 @@ mod tests {
         assert_eq!(preset.size_jitter, 0.25);
         assert_eq!(preset.fade_power, 1.45);
         assert!(!preset.original_color);
+
+        let click: ClickPreset = serde_json::from_str(r#"{"shape":"image"}"#)
+            .expect("旧版点击预设应可读取");
+        assert!(!click.single_image);
+        assert_eq!(click.single_image_rotation_speed, 0.8);
+    }
+
+    fn test_directory(name: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("mouse-glow-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("测试目录应可创建");
+        directory
+    }
+
+    fn test_store(root: &std::path::Path) -> ConfigStore {
+        let user = root.join("user");
+        let default_path = root.join("app").join("config.json");
+        ConfigStore {
+            path: default_path.clone(),
+            default_path,
+            legacy_path: user.join("config.json"),
+            backup_path: user.join("config-backup.json"),
+            location_path: user.join("config-location"),
+        }
     }
 
     #[test]
-    fn config_uses_user_local_data_directory() {
+    fn location_metadata_uses_user_local_data_directory() {
         let store = ConfigStore::new().expect("配置目录应可创建");
         assert!(store
-            .path()
-            .ends_with(PathBuf::from("MouseGlow").join("config.json")));
+            .backup_path
+            .ends_with(PathBuf::from("MouseGlow").join("config-backup.json")));
+        assert!(store
+            .location_path
+            .ends_with(PathBuf::from("MouseGlow").join("config-location")));
+    }
+
+    #[test]
+    fn legacy_config_migrates_to_default_directory() {
+        let root = test_directory("migration");
+        let store = test_store(&root);
+        let mut expected = AppConfig::default();
+        expected.fps = 90;
+        expected.clicks[0].single_image = true;
+        fs::create_dir_all(store.legacy_path.parent().unwrap()).expect("旧配置目录应可创建");
+        fs::write(
+            &store.legacy_path,
+            serde_json::to_string_pretty(&expected).expect("测试配置应可序列化"),
+        )
+        .expect("旧配置应可写入");
+
+        let loaded = store.load();
+
+        assert_eq!(loaded.fps, 90);
+        assert!(loaded.clicks[0].single_image);
+        assert!(store.path().exists());
+        assert!(store.backup_path.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn custom_directory_survives_config_loss_and_resets() {
+        let root = test_directory("custom-location");
+        let mut store = test_store(&root);
+        let custom = root.join("custom");
+        let mut expected = AppConfig::default();
+        expected.fps = 90;
+        expected.clicks[0].single_image = true;
+
+        store.set_directory(&custom, &expected).expect("应可切换配置目录");
+        assert_eq!(store.path(), custom.join("config.json"));
+        assert!(store.is_custom());
+        assert!(store.location_path.exists());
+        fs::remove_file(store.path()).expect("应可模拟主配置丢失");
+
+        let restored = store.load();
+        assert_eq!(restored.fps, 90);
+        assert!(restored.clicks[0].single_image);
+        assert!(store.path().exists());
+
+        store.reset_directory(&restored).expect("应可恢复默认目录");
+        assert_eq!(store.path(), store.default_path());
+        assert!(!store.is_custom());
+        assert!(!store.location_path.exists());
+        assert!(store.path().exists());
+        let _ = fs::remove_dir_all(root);
     }
 }

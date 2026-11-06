@@ -4,7 +4,7 @@ mod input;
 
 use config::{AppConfig, ConfigStore};
 use serde::Serialize;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
@@ -13,7 +13,7 @@ use tauri::{
 
 struct SharedConfig {
     value: RwLock<AppConfig>,
-    store: ConfigStore,
+    store: Mutex<ConfigStore>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -42,7 +42,11 @@ fn save_config(
 ) -> Result<AppConfig, String> {
     config.normalize();
     autostart::apply(&config)?;
-    state.store.save(&config)?;
+    state
+        .store
+        .lock()
+        .map_err(|_| "无法锁定配置存储".to_string())?
+        .save(&config)?;
     input::update_config(&config);
     {
         let mut current = state
@@ -53,6 +57,67 @@ fn save_config(
     }
     let _ = app.emit("config-changed", &config);
     Ok(config)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigLocation {
+    path: String,
+    default_path: String,
+    is_custom: bool,
+}
+
+fn config_location(store: &ConfigStore) -> ConfigLocation {
+    ConfigLocation {
+        path: store.path().to_string_lossy().into_owned(),
+        default_path: store.default_path().to_string_lossy().into_owned(),
+        is_custom: store.is_custom(),
+    }
+}
+
+#[tauri::command]
+fn get_config_location(state: State<'_, SharedConfig>) -> Result<ConfigLocation, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| "无法锁定配置存储".to_string())?;
+    Ok(config_location(&store))
+}
+
+#[tauri::command]
+fn set_config_directory(
+    state: State<'_, SharedConfig>,
+    directory: String,
+) -> Result<ConfigLocation, String> {
+    if directory.trim().is_empty() {
+        return Err("请选择有效的配置目录".to_string());
+    }
+    let config = state
+        .value
+        .read()
+        .map_err(|_| "无法读取设置".to_string())?
+        .clone();
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|_| "无法锁定配置存储".to_string())?;
+    store.set_directory(std::path::Path::new(&directory), &config)?;
+    Ok(config_location(&store))
+}
+
+#[tauri::command]
+fn reset_config_directory(state: State<'_, SharedConfig>) -> Result<ConfigLocation, String> {
+    let config = state
+        .value
+        .read()
+        .map_err(|_| "无法读取设置".to_string())?
+        .clone();
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|_| "无法锁定配置存储".to_string())?;
+    store.reset_directory(&config)?;
+    Ok(config_location(&store))
 }
 
 #[tauri::command]
@@ -207,14 +272,18 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SharedConfig {
             value: RwLock::new(config),
-            store,
+            store: Mutex::new(store),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            get_config_location,
+            set_config_directory,
+            reset_config_directory,
             show_settings,
             get_platform,
             input_permission_granted,

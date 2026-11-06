@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"鼠标流光桌面窗口能力","local":true,"windows":["main","overlay"],"permissions":["core:default","opener:default","updater:default","process:allow-restart"]}}
+{"default":{"identifier":"default","description":"鼠标流光桌面窗口能力","local":true,"windows":["main","overlay"],"permissions":["core:default","opener:default","dialog:allow-open","updater:default","process:allow-restart"]}}

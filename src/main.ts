@@ -369,6 +369,14 @@ function particleImageControl(preset: TrailPreset | ClickPreset): HTMLElement {
       preset.originalColor,
       (value) => { preset.originalColor = value; changed(); },
     ));
+    if (!("startColor" in preset)) {
+      wrapper.append(toggleControl(
+        "单个图案显示",
+        "在点击位置完整显示一张图案，适合魔法阵；关闭后散成多个粒子",
+        preset.singleImage,
+        (value) => { preset.singleImage = value; changed(true); },
+      ));
+    }
   }
   return wrapper;
 }
@@ -495,15 +503,27 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
     if (preset.shape === "text") grid.append(particleTextControl(preset));
   } else {
     const preset = activeClick(config);
+    const singleImage = preset.shape === "image" && preset.singleImage;
     grid.append(
       selectControl<ClickShape>("点击形状", preset.shape, CLICK_SHAPE_OPTIONS, (value) => { preset.shape = value; changed(true); }),
-      rangeControl("扩散范围", preset.radius, 30, 300, 5, "px", (value) => { preset.radius = value; changed(); }),
+      rangeControl(singleImage ? "图案大小" : "扩散范围", preset.radius, 30, 300, 5, "px", (value) => { preset.radius = value; changed(); }),
       rangeControl("持续时间", preset.duration, 150, 2000, 50, "ms", (value) => { preset.duration = value; changed(); }),
       rangeControl("辉光强度", preset.glow, 0.2, 2, 0.1, "×", (value) => { preset.glow = value; changed(); }),
-      rangeControl("元素数量", preset.count, 6, 96, 1, "个", (value) => { preset.count = value; changed(); }),
-      rangeControl("大小随机", Math.round(preset.sizeJitter * 100), 0, 75, 5, "%", (value) => { preset.sizeJitter = value / 100; changed(); }),
-      rangeControl("重力", preset.gravity, -120, 240, 10, "px/s²", (value) => { preset.gravity = value; changed(); }),
-      rangeControl("漂浮幅度", preset.wander, 0, 60, 1, "px", (value) => { preset.wander = value; changed(); }),
+    );
+    if (singleImage) {
+      grid.append(rangeControl("旋转速度", preset.singleImageRotationSpeed, -12, 12, 0.2, "rad/s", (value) => {
+        preset.singleImageRotationSpeed = value;
+        changed();
+      }));
+    } else {
+      grid.append(
+        rangeControl("元素数量", preset.count, 6, 96, 1, "个", (value) => { preset.count = value; changed(); }),
+        rangeControl("大小随机", Math.round(preset.sizeJitter * 100), 0, 75, 5, "%", (value) => { preset.sizeJitter = value / 100; changed(); }),
+        rangeControl("重力", preset.gravity, -120, 240, 10, "px/s²", (value) => { preset.gravity = value; changed(); }),
+        rangeControl("漂浮幅度", preset.wander, 0, 60, 1, "px", (value) => { preset.wander = value; changed(); }),
+      );
+    }
+    grid.append(
       rangeControl("淡出曲线", preset.fadePower, 0.6, 3, 0.1, "×", (value) => { preset.fadePower = value; changed(); }),
       colorControl("主题色", preset.color, (value) => { preset.color = value; changed(); }),
       colorControl("消散颜色", preset.endColor, (value) => { preset.endColor = value; changed(); }),
@@ -546,6 +566,97 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
   return section;
 }
 
+interface ConfigLocation {
+  path: string;
+  defaultPath: string;
+  isCustom: boolean;
+}
+
+function configLocationCard(): HTMLElement {
+  const card = make<HTMLDivElement>("div", "settings-card config-location-card");
+  const heading = make<HTMLDivElement>("div", "settings-card-head");
+  const title = make<HTMLDivElement>("div");
+  title.append(make("strong", "", "配置文件"), make("small", "", "全部设置集中保存在一个 config.json 中"));
+  heading.append(title, make("span", "settings-icon", "▧"));
+  const path = make<HTMLElement>("code", "config-path", "正在读取配置路径…");
+  const locationNote = make<HTMLDivElement>("div", "config-location-note");
+  const actions = make<HTMLDivElement>("div", "config-location-actions");
+  const openButton = make<HTMLButtonElement>("button", "secondary-button", "打开目录");
+  const changeButton = make<HTMLButtonElement>("button", "secondary-button", "更改目录");
+  const resetButton = make<HTMLButtonElement>("button", "secondary-button", "恢复默认");
+  actions.append(openButton, changeButton, resetButton);
+  const explanation = make<HTMLParagraphElement>("p", "config-location-explanation", "更改目录会复制当前全部配置并保留旧文件；路径记录和完整备份用于软件更新后自动恢复。");
+  card.append(heading, path, locationNote, actions, explanation);
+
+  let currentLocation: ConfigLocation | undefined;
+  let busy = false;
+  const updateButtons = (): void => {
+    openButton.disabled = busy || !isTauri || !currentLocation;
+    changeButton.disabled = busy || !isTauri;
+    resetButton.disabled = busy || !isTauri || !currentLocation?.isCustom;
+  };
+  const showLocation = (location: ConfigLocation): void => {
+    currentLocation = location;
+    path.textContent = location.path;
+    path.title = location.path;
+    locationNote.textContent = location.isCustom
+      ? "当前使用自定义目录，软件更新后会自动沿用此路径。"
+      : "当前使用默认位置；程序目录无写入权限时会使用系统用户目录。";
+    updateButtons();
+  };
+  const runAction = async (action: () => Promise<void>): Promise<void> => {
+    busy = true;
+    updateButtons();
+    try {
+      await action();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      busy = false;
+      updateButtons();
+    }
+  };
+
+  openButton.addEventListener("click", () => runAction(async () => {
+    if (!currentLocation) return;
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(currentLocation.path);
+  }));
+  changeButton.addEventListener("click", () => runAction(async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      title: "选择配置文件保存目录",
+      directory: true,
+      multiple: false,
+      canCreateDirectories: true,
+      defaultPath: currentLocation?.path,
+    });
+    if (typeof selected !== "string") return;
+    const location = await invoke<ConfigLocation>("set_config_directory", { directory: selected });
+    showLocation(location);
+    toast("全部配置已保存到新目录，软件更新后会自动沿用");
+  }));
+  resetButton.addEventListener("click", () => runAction(async () => {
+    const location = await invoke<ConfigLocation>("reset_config_directory");
+    showLocation(location);
+    toast("已恢复默认配置目录，原配置文件仍保留");
+  }));
+
+  if (isTauri) {
+    void invoke<ConfigLocation>("get_config_location")
+      .then(showLocation)
+      .catch((error) => {
+        path.textContent = "无法读取配置路径";
+        locationNote.textContent = String(error);
+      });
+  } else {
+    path.textContent = "网页预览无法读取桌面配置路径";
+    locationNote.textContent = "请在桌面应用中管理配置位置。";
+  }
+  updateButtons();
+  return card;
+}
+
 function generalSettings(): HTMLElement {
   const wrapper = make<HTMLDivElement>("div", "general-layout");
   const performance = make<HTMLDivElement>("div", "settings-card");
@@ -581,7 +692,7 @@ function generalSettings(): HTMLElement {
     toggleControl("开机自动启动", "登录系统后自动运行鼠标流光", config.launchAtStartup, (value) => { config.launchAtStartup = value; changed(); }),
     toggleControl("静默启动", "开机启动时不显示设置窗口，仅显示托盘图标", config.silentStart, (value) => { config.silentStart = value; changed(); }),
   );
-  wrapper.append(performance, startup);
+  wrapper.append(performance, startup, configLocationCard());
   if (desktopPlatform === "macos") {
     const permission = make<HTMLDivElement>("div", "settings-card permission-card");
     const heading = make<HTMLDivElement>("div", "settings-card-head");
@@ -633,15 +744,47 @@ function aboutSettings(): HTMLElement {
   });
   const updateButton = make<HTMLButtonElement>("button", "primary-button", "检查更新");
   const status = make<HTMLDivElement>("div", "update-status", "更新由签名安装包保护，下载前会验证发布信息。");
-  const progress = make<HTMLProgressElement>("progress");
-  progress.max = 100;
+  status.setAttribute("aria-live", "polite");
+  const progress = make<HTMLDivElement>("div", "update-progress");
   progress.hidden = true;
+  progress.setAttribute("role", "progressbar");
+  progress.setAttribute("aria-label", "更新下载进度");
+  progress.setAttribute("aria-valuemin", "0");
+  progress.setAttribute("aria-valuemax", "100");
+  const progressTrack = make<HTMLDivElement>("div", "update-progress-track");
+  const progressFill = make<HTMLDivElement>("div", "update-progress-fill");
+  progressTrack.append(progressFill);
+  const progressMeta = make<HTMLDivElement>("div", "update-progress-meta");
+  const progressText = make<HTMLSpanElement>("span", "update-progress-text");
+  const progressValue = make<HTMLSpanElement>("span", "update-progress-value");
+  progressMeta.append(progressText, progressValue);
+  progress.append(progressTrack, progressMeta);
+
+  const formatDownloadSize = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
+  const renderDownloadProgress = (downloaded: number, total: number): void => {
+    const hasTotal = total > 0;
+    progressFill.classList.toggle("indeterminate", !hasTotal);
+    if (hasTotal) {
+      const percent = Math.min(100, Math.max(0, (downloaded / total) * 100));
+      progressFill.style.width = `${percent}%`;
+      progressText.textContent = `${formatDownloadSize(downloaded)} / ${formatDownloadSize(total)} MB`;
+      progressValue.textContent = `${Math.floor(percent)}%`;
+      progress.setAttribute("aria-valuenow", String(Math.round(percent)));
+    } else {
+      progressFill.style.width = "";
+      progressText.textContent = downloaded > 0 ? `已下载 ${formatDownloadSize(downloaded)} MB` : "正在准备下载…";
+      progressValue.textContent = "";
+      progress.removeAttribute("aria-valuenow");
+    }
+  };
+
   updateButton.addEventListener("click", async () => {
     if (!isTauri) {
       toast("网页预览不支持软件更新，请在桌面应用中使用");
       return;
     }
-    updateButton.setAttribute("disabled", "");
+    updateButton.disabled = true;
+    updateButton.textContent = "正在检查…";
     status.textContent = "正在检查更新…";
     progress.hidden = true;
     try {
@@ -652,29 +795,40 @@ function aboutSettings(): HTMLElement {
         return;
       }
       status.textContent = `发现新版本 ${update.version}，正在下载…`;
+      updateButton.textContent = "正在下载…";
       progress.hidden = false;
       let downloaded = 0;
       let total = 0;
+      renderDownloadProgress(downloaded, total);
       await update.downloadAndInstall((event) => {
-        if (event.event === "Started" && event.data.contentLength) total = event.data.contentLength;
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+          renderDownloadProgress(downloaded, total);
+        }
         if (event.event === "Progress") {
           downloaded += event.data.chunkLength;
-          if (total) progress.value = (downloaded / total) * 100;
+          renderDownloadProgress(downloaded, total);
         }
-        if (event.event === "Finished") status.textContent = "更新已下载，正在安装并重启…";
+        if (event.event === "Finished") {
+          if (total <= 0) total = downloaded;
+          renderDownloadProgress(downloaded, total);
+          status.textContent = "更新已下载，正在安装并重启…";
+        }
       });
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (error) {
       console.error(error);
+      progress.hidden = true;
       status.textContent = `更新失败：${String(error)}`;
     } finally {
-      updateButton.removeAttribute("disabled");
+      updateButton.disabled = false;
+      updateButton.textContent = "检查更新";
     }
   });
   card.append(mark, title, version, description, repository, updateButton, progress, status);
   const privacy = make<HTMLDivElement>("div", "privacy-card");
-  privacy.innerHTML = `<strong>本地优先</strong><p>配置仅保存在当前用户的应用数据目录。程序不需要网络权限，只有手动检查更新时才会访问发布服务器。</p>`;
+  privacy.innerHTML = `<strong>本地优先</strong><p>全部配置保存在本机所选目录，路径记录与备份保存在用户应用数据目录。程序不需要网络权限，只有手动检查更新时才会访问发布服务器。</p>`;
   wrapper.append(card, privacy);
   return wrapper;
 }

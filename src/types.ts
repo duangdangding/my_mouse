@@ -42,6 +42,8 @@ export interface ClickPreset extends ParticleCustomization {
   left: boolean;
   right: boolean;
   middle: boolean;
+  singleImage: boolean;
+  singleImageRotationSpeed: number;
 }
 
 export interface AppConfig {

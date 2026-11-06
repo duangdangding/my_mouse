@@ -784,6 +784,20 @@ export class EffectsRenderer {
       this.wake();
       return;
     }
+    if (shape === "image" && preset.singleImage) {
+      this.clickPool.spawn(
+        x,
+        y,
+        0,
+        0,
+        preset.duration,
+        preset.radius * 1.4,
+        0,
+        preset.singleImageRotationSpeed,
+      );
+      this.wake();
+      return;
+    }
     if (shape === "magic") {
       for (let index = 0; index < 2; index += 1) {
         this.clickPool.spawn(
@@ -893,7 +907,12 @@ export class EffectsRenderer {
     const delta = this.lastFrameAt ? Math.min(0.06, (now - this.lastFrameAt) / 1000) : 1 / this.config.fps;
     this.lastFrameAt = now;
     this.trailPool.update(delta, this.trailPreset.gravity, this.trailPreset.wander);
-    this.clickPool.update(delta, this.clickPreset.gravity, this.clickPreset.wander);
+    const singleClickImage = this.clickPreset.shape === "image" && this.clickPreset.singleImage;
+    this.clickPool.update(
+      delta,
+      singleClickImage ? 0 : this.clickPreset.gravity,
+      singleClickImage ? 0 : this.clickPreset.wander,
+    );
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.context.globalCompositeOperation = "lighter";
     if (this.config.masterEnabled && this.config.trailEnabled) {
