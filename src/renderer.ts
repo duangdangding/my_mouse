@@ -493,15 +493,16 @@ class ShapeAtlas {
       const color = mixColor(from, to, steps === 1 ? 0 : index / (steps - 1));
       paintShape(spriteContext, renderShape, color, custom);
 
-      // 字符、图片与光晕只在配置变化时预渲染，逐帧绘制不解析资源或启用阴影。
+      // 光晕只在配置变化时预渲染；阴影在各桌面 WebView 中均可用于图片粒子。
       const canvas = document.createElement("canvas");
       canvas.width = ATLAS_SIZE;
       canvas.height = ATLAS_SIZE;
       const context = canvas.getContext("2d")!;
-      context.filter = `blur(${(2 + glow * 5).toFixed(1)}px)`;
+      context.shadowColor = color;
+      context.shadowBlur = 2 + glow * 7;
       context.globalAlpha = Math.min(0.85, 0.18 + glow * 0.27);
       context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
-      context.filter = "none";
+      context.shadowBlur = 0;
       context.globalAlpha = 1;
       context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
       this.sprites.push(canvas);

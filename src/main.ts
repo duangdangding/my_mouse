@@ -153,12 +153,8 @@ async function loadConfig(): Promise<AppConfig> {
     const fallback = DEFAULT_CONFIG.clicks.find((item) => item.id === preset.id) ?? DEFAULT_CONFIG.clicks[0];
     return { ...structuredClone(fallback), ...preset, shape: preset.shape ?? fallback.shape };
   });
-  for (const preset of DEFAULT_CONFIG.trails) {
-    if (!parsed.trails.some((item) => item.id === preset.id)) parsed.trails.push(structuredClone(preset));
-  }
-  for (const preset of DEFAULT_CONFIG.clicks) {
-    if (!parsed.clicks.some((item) => item.id === preset.id)) parsed.clicks.push(structuredClone(preset));
-  }
+  if (parsed.trails.length === 0) parsed.trails = structuredClone(DEFAULT_CONFIG.trails);
+  if (parsed.clicks.length === 0) parsed.clicks = structuredClone(DEFAULT_CONFIG.clicks);
   return parsed;
 }
 
@@ -381,6 +377,23 @@ function particleImageControl(preset: TrailPreset | ClickPreset): HTMLElement {
   return wrapper;
 }
 
+function deletePreset(kind: "trail" | "click", id: string): void {
+  const presets = kind === "trail" ? config.trails : config.clicks;
+  if (presets.length <= 1) return;
+  const index = presets.findIndex((preset) => preset.id === id);
+  if (index < 0) return;
+  if (!window.confirm(`确定删除预设“${presets[index].name}”吗？此操作不可撤销。`)) return;
+  const activeId = kind === "trail" ? config.activeTrailId : config.activeClickId;
+  const [removed] = presets.splice(index, 1);
+  if (activeId === id) {
+    const fallback = presets[Math.min(index, presets.length - 1)];
+    if (kind === "trail") config.activeTrailId = fallback.id;
+    else config.activeClickId = fallback.id;
+  }
+  changed(true);
+  toast(`已删除预设“${removed.name}”`);
+}
+
 function presetEditor(kind: "trail" | "click"): HTMLElement {
   const section = make<HTMLDivElement>("div", "effect-layout");
   const presetPanel = make<HTMLDivElement>("div", "preset-panel");
@@ -392,7 +405,9 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
   const presets = kind === "trail" ? config.trails : config.clicks;
   const activeId = kind === "trail" ? config.activeTrailId : config.activeClickId;
   for (const preset of presets) {
-    const button = make<HTMLButtonElement>("button", `preset-card${preset.id === activeId ? " active" : ""}`);
+    const card = make<HTMLDivElement>("div", `preset-card${preset.id === activeId ? " active" : ""}`);
+    const button = make<HTMLButtonElement>("button", "preset-select");
+    button.type = "button";
     const colors = "startColor" in preset ? [preset.startColor, preset.endColor] : [preset.color, preset.endColor];
     const shapeLabel = "startColor" in preset ? TRAIL_SHAPE_LABELS[preset.shape] : CLICK_SHAPE_LABELS[preset.shape];
     const symbol = preset.shape === "text" ? preset.customText : SHAPE_SYMBOLS[preset.shape];
@@ -412,7 +427,16 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
       else config.activeClickId = preset.id;
       changed(true);
     });
-    list.append(button);
+    card.append(button);
+    if (presets.length > 1) {
+      const remove = make<HTMLButtonElement>("button", "preset-delete danger-button", "×");
+      remove.type = "button";
+      remove.title = `删除预设“${preset.name}”`;
+      remove.setAttribute("aria-label", `删除预设${preset.name}`);
+      remove.addEventListener("click", () => deletePreset(kind, preset.id));
+      card.append(remove);
+    }
+    list.append(card);
   }
   const duplicate = make<HTMLButtonElement>("button", "secondary-button full", "＋ 复制当前预设");
   duplicate.addEventListener("click", () => {
@@ -432,25 +456,6 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
     changed(true);
   });
   presetPanel.append(presetHead, list, duplicate);
-  const isCustom = kind === "trail"
-    ? !DEFAULT_CONFIG.trails.some((preset) => preset.id === activeId)
-    : !DEFAULT_CONFIG.clicks.some((preset) => preset.id === activeId);
-  if (isCustom) {
-    const remove = make<HTMLButtonElement>("button", "secondary-button full danger-button", "删除当前副本");
-    remove.addEventListener("click", () => {
-      const index = presets.findIndex((preset) => preset.id === activeId);
-      if (index < 0) return;
-      if (!window.confirm(`确定删除预设“${presets[index].name}”吗？此操作不可撤销。`)) return;
-      const [removed] = presets.splice(index, 1);
-      const fallback = presets[Math.min(index, presets.length - 1)]
-        ?? (kind === "trail" ? DEFAULT_CONFIG.trails[0] : DEFAULT_CONFIG.clicks[0]);
-      if (kind === "trail") config.activeTrailId = fallback.id;
-      else config.activeClickId = fallback.id;
-      changed(true);
-      toast(`已删除预设“${removed.name}”`);
-    });
-    presetPanel.append(remove);
-  }
 
   const editor = make<HTMLDivElement>("div", "editor-column");
   const panel = make<HTMLDivElement>("div", "parameters-panel");

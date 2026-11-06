@@ -322,17 +322,6 @@ impl AppConfig {
         if self.clicks.is_empty() {
             self.clicks = AppConfig::default().clicks;
         }
-        let defaults = AppConfig::default();
-        for preset in &defaults.trails {
-            if !self.trails.iter().any(|item| item.id == preset.id) {
-                self.trails.push(preset.clone());
-            }
-        }
-        for preset in &defaults.clicks {
-            if !self.clicks.iter().any(|item| item.id == preset.id) {
-                self.clicks.push(preset.clone());
-            }
-        }
         self.trails.truncate(24);
         self.clicks.truncate(24);
         for preset in &mut self.trails {
@@ -646,8 +635,6 @@ mod tests {
     #[test]
     fn legacy_presets_receive_distinct_shapes() {
         let mut config = AppConfig::default();
-        config.trails.retain(|preset| !matches!(preset.id.as_str(), "trail-quantum" | "trail-arcane"));
-        config.clicks.retain(|preset| !matches!(preset.id.as_str(), "click-matrix" | "click-arcane"));
         for preset in &mut config.trails {
             preset.shape.clear();
         }
@@ -674,6 +661,24 @@ mod tests {
         config.normalize();
         assert_eq!(config.trails[0].shape, "glow");
         assert_eq!(config.clicks[0].shape, "ripple");
+    }
+
+    #[test]
+    fn deleted_builtin_presets_stay_deleted() {
+        let mut config = AppConfig::default();
+        config.trails.retain(|preset| preset.id != "trail-nebula");
+        config.clicks.retain(|preset| preset.id != "click-ripple");
+        config.active_trail_id = "trail-nebula".into();
+        config.active_click_id = "click-ripple".into();
+
+        config.normalize();
+
+        assert_eq!(config.trails.len(), 5);
+        assert_eq!(config.clicks.len(), 5);
+        assert!(!config.trails.iter().any(|preset| preset.id == "trail-nebula"));
+        assert!(!config.clicks.iter().any(|preset| preset.id == "click-ripple"));
+        assert_eq!(config.active_trail_id, "trail-sakura");
+        assert_eq!(config.active_click_id, "click-stars");
     }
 
     #[test]

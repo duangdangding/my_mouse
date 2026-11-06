@@ -62,9 +62,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .panel-heading strong { font-size: 14px; font-weight: 600; }
 .panel-heading small { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .preset-list { display: flex; flex-direction: column; gap: 7px; }
-.preset-card { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 68px; padding: 9px; border: 1px solid transparent; border-radius: 10px; background: transparent; text-align: left; transition: .16s ease; }
+.preset-card { position: relative; width: 100%; min-height: 68px; padding: 9px; border: 1px solid transparent; border-radius: 10px; background: transparent; transition: .16s ease; }
 .preset-card:hover { background: rgba(255,255,255,.028); }
 .preset-card.active { border-color: rgba(148,131,255,.28); background: rgba(139,123,255,.09); }
+.preset-select { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 0; border: 0; background: transparent; text-align: left; }
 .preset-orb { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; filter: saturate(1.15); color: rgba(255,255,255,.92); font-size: 19px; line-height: 1; text-shadow: 0 0 7px rgba(255,255,255,.45); }
 .preset-orb.shape-ribbon { font-size: 27px; }
 .preset-orb.shape-firefly { font-size: 32px; }
@@ -72,12 +73,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .preset-orb.shape-circuit { font-size: 26px; }
 .preset-orb.shape-rune { font-size: 22px; }
 .preset-orb.shape-magic { font-size: 24px; }
-.preset-name { min-width: 0; }
+.preset-name { min-width: 0; flex: 1; padding-right: 18px; }
 .preset-name strong, .preset-name small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .preset-name strong { color: #c8cddd; font-size: 13px; font-weight: 500; }
 .preset-name small { margin-top: 6px; color: #7b8298; font-size: 11px; }
 .preset-card.active .preset-name small { color: #aaa0df; }
-.preset-check { position: absolute; right: 8px; top: 8px; color: #a89cff; font-size: 10px; font-style: normal; }
+.preset-check { position: absolute; right: 30px; top: 8px; color: #a89cff; font-size: 10px; font-style: normal; }
+.preset-delete { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; font-size: 18px; line-height: 1; opacity: .45; transition: .16s ease; }
+.preset-card:hover .preset-delete, .preset-delete:focus-visible { opacity: 1; }
 .secondary-button { height: 38px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.025); color: #aab1c5; font-size: 12px; }
 .secondary-button:hover { border-color: rgba(139,123,255,.35); color: #c7c0fa; }
 .secondary-button.full { width: 100%; margin-top: 12px; }
