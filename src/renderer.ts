@@ -460,11 +460,13 @@ class ShapeAtlas {
     customText: string,
     customImage: string,
     originalColor: boolean,
+    singleImage: boolean,
     onImageReady: () => void,
   ): void {
     const image = shape === "image" ? customImageCache.get(customImage) : undefined;
     if (shape === "image" && customImage && !image) requestCustomImage(customImage, onImageReady);
     const renderShape: EffectShape = shape === "image" && !image ? "glow" : shape;
+    const resolutionScale = shape === "image" && singleImage ? 4 : 1;
     const key = [
       fromHex,
       toHex,
@@ -474,6 +476,7 @@ class ShapeAtlas {
       customText,
       customImage,
       originalColor,
+      resolutionScale,
       image ? "ready" : "empty",
     ].join("|");
     if (key === this.key) return;
@@ -485,26 +488,30 @@ class ShapeAtlas {
     const to = parseColor(toHex);
     const steps = shape === "image" && originalColor && image ? 1 : COLOR_STEPS;
     const custom: CustomPaint = { text: customText, image, originalColor };
+    const spriteSize = SPRITE_SIZE * resolutionScale;
+    const atlasPadding = ATLAS_PADDING * resolutionScale;
+    const atlasSize = ATLAS_SIZE * resolutionScale;
     for (let index = 0; index < steps; index += 1) {
       const sprite = document.createElement("canvas");
-      sprite.width = SPRITE_SIZE;
-      sprite.height = SPRITE_SIZE;
+      sprite.width = spriteSize;
+      sprite.height = spriteSize;
       const spriteContext = sprite.getContext("2d")!;
+      spriteContext.scale(resolutionScale, resolutionScale);
       const color = mixColor(from, to, steps === 1 ? 0 : index / (steps - 1));
       paintShape(spriteContext, renderShape, color, custom);
 
-      // 光晕只在配置变化时预渲染；阴影在各桌面 WebView 中均可用于图片粒子。
+      // 单图使用高分辨率贴图；光晕只在配置变化时预渲染，不增加逐帧阴影开销。
       const canvas = document.createElement("canvas");
-      canvas.width = ATLAS_SIZE;
-      canvas.height = ATLAS_SIZE;
+      canvas.width = atlasSize;
+      canvas.height = atlasSize;
       const context = canvas.getContext("2d")!;
       context.shadowColor = color;
-      context.shadowBlur = 2 + glow * 7;
+      context.shadowBlur = (2 + glow * 7) * resolutionScale;
       context.globalAlpha = Math.min(0.85, 0.18 + glow * 0.27);
-      context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
+      context.drawImage(sprite, atlasPadding, atlasPadding);
       context.shadowBlur = 0;
       context.globalAlpha = 1;
-      context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
+      context.drawImage(sprite, atlasPadding, atlasPadding);
       this.sprites.push(canvas);
     }
   }
@@ -590,6 +597,8 @@ class ParticlePool {
   }
 
   draw(context: CanvasRenderingContext2D, atlas: ShapeAtlas): void {
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
     for (let index = 0; index < this.count; index += 1) {
       const progress = this.age[index] / this.life[index];
       const baseSize = this.size[index];
@@ -681,6 +690,7 @@ export class EffectsRenderer {
   private hasLastPoint = false;
   private animationFrame = 0;
   private lastFrameAt = 0;
+  private nextFrameAt = 0;
   private measuredAt = 0;
   private measuredFrames = 0;
   private measuredFps = 0;
@@ -880,6 +890,7 @@ export class EffectsRenderer {
       this.trailPreset.customText,
       this.trailPreset.customImage,
       this.trailPreset.originalColor,
+      false,
       onImageReady,
     );
     this.clickAtlas.rebuild(
@@ -891,6 +902,7 @@ export class EffectsRenderer {
       this.clickPreset.customText,
       this.clickPreset.customImage,
       this.clickPreset.originalColor,
+      this.clickPreset.singleImage,
       onImageReady,
     );
   }
@@ -901,12 +913,15 @@ export class EffectsRenderer {
 
   private render = (now: number): void => {
     const interval = 1000 / this.config.fps;
-    if (this.lastFrameAt && now - this.lastFrameAt + 0.25 < interval) {
+    if (this.nextFrameAt && now + 0.25 < this.nextFrameAt) {
       this.animationFrame = requestAnimationFrame(this.render);
       return;
     }
     const delta = this.lastFrameAt ? Math.min(0.06, (now - this.lastFrameAt) / 1000) : 1 / this.config.fps;
     this.lastFrameAt = now;
+    // 保留调度余量，让 120 Hz 屏幕可通过长短帧间隔实现 45／90 FPS。
+    if (!this.nextFrameAt || now - this.nextFrameAt > interval * 2) this.nextFrameAt = now;
+    this.nextFrameAt += interval;
     this.trailPool.update(delta, this.trailPreset.gravity, this.trailPreset.wander);
     const singleClickImage = this.clickPreset.shape === "image" && this.clickPreset.singleImage;
     this.clickPool.update(

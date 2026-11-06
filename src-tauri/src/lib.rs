@@ -55,7 +55,7 @@ fn save_config(
             .map_err(|_| "无法更新设置".to_string())?;
         *current = config.clone();
     }
-    let _ = app.emit("config-changed", &config);
+    let _ = app.emit_to("overlay", "config-changed", &config);
     Ok(config)
 }
 

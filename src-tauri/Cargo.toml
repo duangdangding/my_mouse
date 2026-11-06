@@ -1,6 +1,6 @@
 [package]
 name = "mouse-glow"
-version = "0.4.1"
+version = "0.4.2"
 description = "低开销的 Windows／macOS 鼠标拖尾与点击特效"
 authors = ["Mouse Glow"]
 edition = "2021"
