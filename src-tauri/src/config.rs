@@ -16,6 +16,14 @@ pub struct TrailPreset {
     pub end_color: String,
     pub spread_speed: f32,
     pub rotation_speed: f32,
+    pub custom_text: String,
+    pub custom_image: String,
+    pub original_color: bool,
+    pub size_jitter: f32,
+    pub gravity: f32,
+    pub wander: f32,
+    pub fade_power: f32,
+    pub follow_movement: bool,
 }
 
 impl Default for TrailPreset {
@@ -32,6 +40,14 @@ impl Default for TrailPreset {
             end_color: "#7657FF".into(),
             spread_speed: 18.0,
             rotation_speed: 1.8,
+            custom_text: "✦".into(),
+            custom_image: String::new(),
+            original_color: false,
+            size_jitter: 0.25,
+            gravity: 0.0,
+            wander: 0.0,
+            fade_power: 1.45,
+            follow_movement: false,
         }
     }
 }
@@ -52,6 +68,13 @@ pub struct ClickPreset {
     pub left: bool,
     pub right: bool,
     pub middle: bool,
+    pub custom_text: String,
+    pub custom_image: String,
+    pub original_color: bool,
+    pub size_jitter: f32,
+    pub gravity: f32,
+    pub wander: f32,
+    pub fade_power: f32,
 }
 
 impl Default for ClickPreset {
@@ -69,6 +92,13 @@ impl Default for ClickPreset {
             left: true,
             right: false,
             middle: false,
+            custom_text: "✦".into(),
+            custom_image: String::new(),
+            original_color: false,
+            size_jitter: 0.25,
+            gravity: 0.0,
+            wander: 0.0,
+            fade_power: 1.45,
         }
     }
 }
@@ -91,7 +121,10 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         let trail = TrailPreset::default();
-        let click = ClickPreset::default();
+        let click = ClickPreset {
+            fade_power: 1.65,
+            ..ClickPreset::default()
+        };
         Self {
             master_enabled: true,
             trail_enabled: true,
@@ -115,6 +148,9 @@ impl Default for AppConfig {
                     end_color: "#FF4D9D".into(),
                     spread_speed: 24.0,
                     rotation_speed: 2.4,
+                    wander: 9.0,
+                    fade_power: 1.2,
+                    ..TrailPreset::default()
                 },
                 TrailPreset {
                     id: "trail-aurora".into(),
@@ -128,6 +164,9 @@ impl Default for AppConfig {
                     end_color: "#24C8A5".into(),
                     spread_speed: 4.0,
                     rotation_speed: 0.2,
+                    follow_movement: true,
+                    fade_power: 1.05,
+                    ..TrailPreset::default()
                 },
                 TrailPreset {
                     id: "trail-sunset".into(),
@@ -141,6 +180,9 @@ impl Default for AppConfig {
                     end_color: "#FF5C38".into(),
                     spread_speed: 42.0,
                     rotation_speed: 4.8,
+                    follow_movement: true,
+                    gravity: 32.0,
+                    ..TrailPreset::default()
                 },
                 TrailPreset {
                     id: "trail-quantum".into(),
@@ -154,6 +196,9 @@ impl Default for AppConfig {
                     end_color: "#3578FF".into(),
                     spread_speed: 6.0,
                     rotation_speed: 0.2,
+                    follow_movement: true,
+                    fade_power: 1.15,
+                    ..TrailPreset::default()
                 },
                 TrailPreset {
                     id: "trail-arcane".into(),
@@ -167,6 +212,9 @@ impl Default for AppConfig {
                     end_color: "#8B5CF6".into(),
                     spread_speed: 12.0,
                     rotation_speed: 1.2,
+                    wander: 4.0,
+                    fade_power: 1.2,
+                    ..TrailPreset::default()
                 },
             ],
             clicks: vec![
@@ -184,6 +232,7 @@ impl Default for AppConfig {
                     left: true,
                     right: true,
                     middle: false,
+                    ..ClickPreset::default()
                 },
                 ClickPreset {
                     id: "click-firefly".into(),
@@ -198,6 +247,8 @@ impl Default for AppConfig {
                     left: true,
                     right: false,
                     middle: false,
+                    wander: 16.0,
+                    ..ClickPreset::default()
                 },
                 ClickPreset {
                     id: "click-gold".into(),
@@ -212,6 +263,8 @@ impl Default for AppConfig {
                     left: true,
                     right: true,
                     middle: true,
+                    gravity: 110.0,
+                    ..ClickPreset::default()
                 },
                 ClickPreset {
                     id: "click-matrix".into(),
@@ -226,6 +279,8 @@ impl Default for AppConfig {
                     left: true,
                     right: true,
                     middle: false,
+                    fade_power: 1.65,
+                    ..ClickPreset::default()
                 },
                 ClickPreset {
                     id: "click-arcane".into(),
@@ -240,6 +295,8 @@ impl Default for AppConfig {
                     left: true,
                     right: true,
                     middle: false,
+                    fade_power: 1.1,
+                    ..ClickPreset::default()
                 },
             ],
         }
@@ -294,6 +351,12 @@ impl AppConfig {
             preset.spacing = finite(preset.spacing, 7.0).clamp(2.0, 40.0);
             preset.spread_speed = finite(preset.spread_speed, 18.0).clamp(0.0, 120.0);
             preset.rotation_speed = finite(preset.rotation_speed, 1.8).clamp(0.0, 12.0);
+            preset.custom_text = clean_particle_text(&preset.custom_text);
+            clean_custom_image(&mut preset.custom_image);
+            preset.size_jitter = finite(preset.size_jitter, 0.25).clamp(0.0, 0.75);
+            preset.gravity = finite(preset.gravity, 0.0).clamp(-120.0, 240.0);
+            preset.wander = finite(preset.wander, 0.0).clamp(0.0, 60.0);
+            preset.fade_power = finite(preset.fade_power, 1.45).clamp(0.6, 3.0);
             clean_color(&mut preset.start_color, "#62E8FF");
             clean_color(&mut preset.end_color, "#7657FF");
         }
@@ -315,6 +378,12 @@ impl AppConfig {
             preset.duration = preset.duration.clamp(150, 2000);
             preset.glow = finite(preset.glow, 1.0).clamp(0.2, 2.0);
             preset.count = preset.count.clamp(6, 96);
+            preset.custom_text = clean_particle_text(&preset.custom_text);
+            clean_custom_image(&mut preset.custom_image);
+            preset.size_jitter = finite(preset.size_jitter, 0.25).clamp(0.0, 0.75);
+            preset.gravity = finite(preset.gravity, 0.0).clamp(-120.0, 240.0);
+            preset.wander = finite(preset.wander, 0.0).clamp(0.0, 60.0);
+            preset.fade_power = finite(preset.fade_power, 1.45).clamp(0.6, 3.0);
             clean_color(&mut preset.color, "#7DE8FF");
             clean_color(&mut preset.end_color, "#4B5FFF");
         }
@@ -341,14 +410,54 @@ fn clean_name(name: &str) -> String {
 }
 
 fn clean_trail_shape(shape: &mut String) {
-    if !matches!(shape.as_str(), "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune") {
+    if !matches!(
+        shape.as_str(),
+        "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune" | "heart" | "snowflake" | "diamond" | "text" | "image"
+    ) {
         *shape = "glow".into();
     }
 }
 
 fn clean_click_shape(shape: &mut String) {
-    if !matches!(shape.as_str(), "ripple" | "star" | "firefly" | "shard" | "hex" | "magic") {
+    if !matches!(
+        shape.as_str(),
+        "ripple" | "star" | "firefly" | "shard" | "hex" | "magic" | "heart" | "snowflake" | "diamond" | "text" | "image"
+    ) {
         *shape = "ripple".into();
+    }
+}
+
+fn clean_particle_text(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        "✦".into()
+    } else {
+        trimmed.chars().take(4).collect()
+    }
+}
+
+fn clean_custom_image(image: &mut String) {
+    if image.is_empty() {
+        return;
+    }
+    let valid_prefix = [
+        "data:image/png;base64,",
+        "data:image/webp;base64,",
+        "data:image/svg+xml;base64,",
+    ]
+    .iter()
+    .any(|prefix| image.starts_with(prefix));
+    let valid_payload = image
+        .split_once(',')
+        .map(|(_, payload)| {
+            !payload.is_empty()
+                && payload.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
+                })
+        })
+        .unwrap_or(false);
+    if image.len() > 700_000 || !valid_prefix || !valid_payload {
+        image.clear();
     }
 }
 
@@ -476,6 +585,41 @@ mod tests {
         assert_eq!(config.active_trail_id, "trail-nebula");
         assert_eq!(config.trails[0].start_color, "#62E8FF");
         assert_eq!(config.clicks[0].color, "#7DE8FF");
+    }
+
+    #[test]
+    fn custom_particles_are_normalized_and_bounded() {
+        let mut config = AppConfig::default();
+        config.trails[0].shape = "image".into();
+        config.trails[0].custom_text = "  🌸🌸🌸🌸🌸  ".into();
+        config.trails[0].custom_image = "https://example.com/icon.svg".into();
+        config.trails[0].size_jitter = 5.0;
+        config.trails[0].gravity = f32::NAN;
+        config.trails[0].wander = -10.0;
+        config.trails[0].fade_power = 20.0;
+        config.clicks[0].shape = "snowflake".into();
+        config.clicks[0].custom_image = "data:image/png;base64,AA==".into();
+        config.normalize();
+        assert_eq!(config.trails[0].shape, "image");
+        assert_eq!(config.trails[0].custom_text, "🌸🌸🌸🌸");
+        assert!(config.trails[0].custom_image.is_empty());
+        assert_eq!(config.trails[0].size_jitter, 0.75);
+        assert_eq!(config.trails[0].gravity, 0.0);
+        assert_eq!(config.trails[0].wander, 0.0);
+        assert_eq!(config.trails[0].fade_power, 3.0);
+        assert_eq!(config.clicks[0].shape, "snowflake");
+        assert_eq!(config.clicks[0].custom_image, "data:image/png;base64,AA==");
+    }
+
+    #[test]
+    fn legacy_custom_fields_use_safe_defaults() {
+        let preset: TrailPreset = serde_json::from_str(r#"{"shape":"text"}"#)
+            .expect("旧版预设应可读取");
+        assert_eq!(preset.custom_text, "✦");
+        assert!(preset.custom_image.is_empty());
+        assert_eq!(preset.size_jitter, 0.25);
+        assert_eq!(preset.fade_power, 1.45);
+        assert!(!preset.original_color);
     }
 
     #[test]

@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
+import { readCustomImage } from "./custom-image";
 import { defaultConfig, DEFAULT_CONFIG } from "./defaults";
-import { EffectsRenderer } from "./renderer";
 import { activeClick, activeTrail, isTauri } from "./types";
-import type { AppConfig, ClickShape, EffectShape, MouseButton, TrailShape } from "./types";
+import type { AppConfig, ClickPreset, ClickShape, EffectShape, TrailPreset, TrailShape } from "./types";
 import "./style.css";
 
 type Tab = "trail" | "click" | "general" | "about";
@@ -47,9 +47,6 @@ let config = defaultConfig();
 let desktopPlatform = "web";
 let activeTab: Tab = "trail";
 let saveTimer = 0;
-let preview: EffectsRenderer | undefined;
-let previewObserver: ResizeObserver | undefined;
-let previewStatsTimer = 0;
 let toastTimer = 0;
 
 const titles: Record<Tab, [string, string]> = {
@@ -66,6 +63,11 @@ const TRAIL_SHAPE_OPTIONS = [
   ["spark", "四芒星火"],
   ["circuit", "电路光轨"],
   ["rune", "悬浮符文"],
+  ["heart", "爱心"],
+  ["snowflake", "雪花"],
+  ["diamond", "菱形"],
+  ["text", "字符 / Emoji"],
+  ["image", "自定义图片"],
 ] as const;
 const CLICK_SHAPE_OPTIONS = [
   ["ripple", "扩散圆环"],
@@ -74,7 +76,19 @@ const CLICK_SHAPE_OPTIONS = [
   ["shard", "棱镜碎片"],
   ["hex", "六边形脉冲"],
   ["magic", "旋转魔法阵"],
+  ["heart", "爱心"],
+  ["snowflake", "雪花"],
+  ["diamond", "菱形"],
+  ["text", "字符 / Emoji"],
+  ["image", "自定义图片"],
 ] as const;
+const CUSTOM_SHAPE_LABELS = {
+  heart: "爱心",
+  snowflake: "雪花",
+  diamond: "菱形",
+  text: "字符 / Emoji",
+  image: "自定义图片",
+} as const;
 const TRAIL_SHAPE_LABELS: Record<TrailShape, string> = {
   glow: "圆形光点",
   petal: "樱花花瓣",
@@ -82,6 +96,7 @@ const TRAIL_SHAPE_LABELS: Record<TrailShape, string> = {
   spark: "四芒星火",
   circuit: "电路光轨",
   rune: "悬浮符文",
+  ...CUSTOM_SHAPE_LABELS,
 };
 const CLICK_SHAPE_LABELS: Record<ClickShape, string> = {
   ripple: "扩散圆环",
@@ -90,6 +105,7 @@ const CLICK_SHAPE_LABELS: Record<ClickShape, string> = {
   shard: "棱镜碎片",
   hex: "六边形脉冲",
   magic: "旋转魔法阵",
+  ...CUSTOM_SHAPE_LABELS,
 };
 const SHAPE_SYMBOLS: Record<EffectShape, string> = {
   glow: "●",
@@ -104,6 +120,11 @@ const SHAPE_SYMBOLS: Record<EffectShape, string> = {
   shard: "◆",
   hex: "⬡",
   magic: "✥",
+  heart: "♥",
+  snowflake: "❄",
+  diamond: "◆",
+  text: "字",
+  image: "▧",
 };
 
 function setSaveState(state: SaveState): void {
@@ -124,12 +145,14 @@ async function loadConfig(): Promise<AppConfig> {
   const saved = localStorage.getItem("mouse-glow-config");
   if (!saved) return defaultConfig();
   const parsed = JSON.parse(saved) as AppConfig;
-  for (const preset of parsed.trails) {
-    preset.shape ??= DEFAULT_CONFIG.trails.find((item) => item.id === preset.id)?.shape ?? "glow";
-  }
-  for (const preset of parsed.clicks) {
-    preset.shape ??= DEFAULT_CONFIG.clicks.find((item) => item.id === preset.id)?.shape ?? "ripple";
-  }
+  parsed.trails = (parsed.trails ?? []).map((preset) => {
+    const fallback = DEFAULT_CONFIG.trails.find((item) => item.id === preset.id) ?? DEFAULT_CONFIG.trails[0];
+    return { ...structuredClone(fallback), ...preset, shape: preset.shape ?? fallback.shape };
+  });
+  parsed.clicks = (parsed.clicks ?? []).map((preset) => {
+    const fallback = DEFAULT_CONFIG.clicks.find((item) => item.id === preset.id) ?? DEFAULT_CONFIG.clicks[0];
+    return { ...structuredClone(fallback), ...preset, shape: preset.shape ?? fallback.shape };
+  });
   for (const preset of DEFAULT_CONFIG.trails) {
     if (!parsed.trails.some((item) => item.id === preset.id)) parsed.trails.push(structuredClone(preset));
   }
@@ -156,7 +179,6 @@ async function persistConfig(): Promise<void> {
 }
 
 function changed(scheduleRender = false): void {
-  preview?.setConfig(config);
   clearTimeout(saveTimer);
   setSaveState("saving");
   saveTimer = window.setTimeout(() => void persistConfig(), 280);
@@ -268,59 +290,86 @@ function toggleControl(
   return wrapper;
 }
 
-function previewPanel(): HTMLElement {
-  const panel = make<HTMLDivElement>("div", "preview-panel");
-  const head = make<HTMLDivElement>("div", "panel-heading");
-  const title = make<HTMLDivElement>("div");
-  title.append(make("strong", "", "实时预览"), make("small", "", "移动鼠标并点击，立即感受参数变化"));
-  const stats = make<HTMLDivElement>("div", "preview-stats");
-  stats.innerHTML = `<span><i></i><b id="preview-fps">0</b> FPS</span><span><b id="preview-particles">0</b> 粒子</span>`;
-  head.append(title, stats);
-  const stage = make<HTMLDivElement>("div", "preview-stage");
-  const canvas = make<HTMLCanvasElement>("canvas", "preview-canvas");
-  const hint = make<HTMLDivElement>("div", "preview-hint", "在此移动鼠标 · 点击试试");
-  stage.append(canvas, hint);
-  panel.append(head, stage);
-  window.setTimeout(() => {
-    preview?.clear();
-    preview = new EffectsRenderer(canvas, config);
-    const resize = () => {
-      const rect = stage.getBoundingClientRect();
-      const ratio = Math.min(2, devicePixelRatio || 1);
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      preview?.resize(rect.width * ratio, rect.height * ratio);
-    };
-    previewObserver?.disconnect();
-    previewObserver = new ResizeObserver(resize);
-    previewObserver.observe(stage);
-    resize();
-    canvas.addEventListener("pointermove", (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      preview?.pointerMove((event.clientX - rect.left) * scaleX, (event.clientY - rect.top) * scaleY);
-      hint.classList.add("hidden");
-    });
-    canvas.addEventListener("pointerdown", (event) => {
-      const rect = canvas.getBoundingClientRect();
-      const buttons: MouseButton[] = ["left", "middle", "right"];
-      preview?.click(
-        (event.clientX - rect.left) * (canvas.width / rect.width),
-        (event.clientY - rect.top) * (canvas.height / rect.height),
-        buttons[event.button] ?? "left",
-      );
-    });
-    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-    clearInterval(previewStatsTimer);
-    previewStatsTimer = window.setInterval(() => {
-      const fps = document.querySelector("#preview-fps");
-      const particles = document.querySelector("#preview-particles");
-      if (fps) fps.textContent = String(preview?.fps ?? 0);
-      if (particles) particles.textContent = String(preview?.particleCount ?? 0);
-    }, 500);
+function particleTextControl(preset: TrailPreset | ClickPreset): HTMLElement {
+  const wrapper = make<HTMLDivElement>("div", "control inline-control");
+  wrapper.append(make("label", "", "字符 / Emoji"));
+  const input = make<HTMLInputElement>("input", "particle-text-input");
+  input.value = preset.customText;
+  input.maxLength = 16;
+  input.placeholder = "✦";
+  input.setAttribute("aria-label", "自定义粒子字符，最多四个字符");
+  input.addEventListener("input", () => {
+    preset.customText = Array.from(input.value.trim()).slice(0, 4).join("") || "✦";
+    changed();
   });
-  return panel;
+  input.addEventListener("change", () => {
+    input.value = preset.customText;
+  });
+  wrapper.append(input);
+  return wrapper;
+}
+
+function particleImageControl(preset: TrailPreset | ClickPreset): HTMLElement {
+  const wrapper = make<HTMLDivElement>("div", "custom-asset");
+  const row = make<HTMLDivElement>("div", "custom-asset-row");
+  const thumbnail = make<HTMLDivElement>("div", "custom-asset-preview");
+  if (preset.customImage) {
+    const image = make<HTMLImageElement>("img");
+    image.src = preset.customImage;
+    image.alt = "当前粒子图案";
+    thumbnail.append(image);
+  } else {
+    thumbnail.append(make("span", "", "▧"));
+  }
+  const copy = make<HTMLDivElement>("div", "custom-asset-copy");
+  copy.append(
+    make("strong", "", preset.customImage ? "已导入粒子图案" : "选择本地粒子图案"),
+    make("small", "", "支持 SVG、PNG、WebP，最大 512 KB、1024 像素"),
+  );
+  const actions = make<HTMLDivElement>("div", "custom-asset-actions");
+  const file = make<HTMLInputElement>("input", "visually-hidden");
+  file.type = "file";
+  file.accept = ".svg,.png,.webp,image/svg+xml,image/png,image/webp";
+  const importButton = make<HTMLButtonElement>("button", "secondary-button", preset.customImage ? "替换" : "导入");
+  importButton.type = "button";
+  importButton.addEventListener("click", () => file.click());
+  file.addEventListener("change", async () => {
+    const selected = file.files?.[0];
+    if (!selected) return;
+    importButton.disabled = true;
+    try {
+      preset.customImage = await readCustomImage(selected);
+      preset.shape = "image";
+      changed(true);
+      toast("粒子图案已导入并保存在本机");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      importButton.disabled = false;
+      file.value = "";
+    }
+  });
+  actions.append(file, importButton);
+  if (preset.customImage) {
+    const remove = make<HTMLButtonElement>("button", "text-button", "删除");
+    remove.type = "button";
+    remove.addEventListener("click", () => {
+      preset.customImage = "";
+      changed(true);
+    });
+    actions.append(remove);
+  }
+  row.append(thumbnail, copy, actions);
+  wrapper.append(row);
+  if (preset.customImage) {
+    wrapper.append(toggleControl(
+      "保留原图颜色",
+      "关闭后使用起始颜色和结束颜色为图片染色",
+      preset.originalColor,
+      (value) => { preset.originalColor = value; changed(); },
+    ));
+  }
+  return wrapper;
 }
 
 function presetEditor(kind: "trail" | "click"): HTMLElement {
@@ -337,8 +386,14 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
     const button = make<HTMLButtonElement>("button", `preset-card${preset.id === activeId ? " active" : ""}`);
     const colors = "startColor" in preset ? [preset.startColor, preset.endColor] : [preset.color, preset.endColor];
     const shapeLabel = "startColor" in preset ? TRAIL_SHAPE_LABELS[preset.shape] : CLICK_SHAPE_LABELS[preset.shape];
-    const orb = make<HTMLSpanElement>("span", `preset-orb shape-${preset.shape}`, SHAPE_SYMBOLS[preset.shape]);
+    const symbol = preset.shape === "text" ? preset.customText : SHAPE_SYMBOLS[preset.shape];
+    const orb = make<HTMLSpanElement>("span", `preset-orb shape-${preset.shape}`, symbol);
     orb.style.background = `radial-gradient(circle at 35% 35%, ${colors[0]}, ${colors[1]} 65%, transparent 72%)`;
+    if (preset.shape === "image" && preset.customImage) {
+      orb.textContent = "";
+      orb.classList.add("has-image");
+      orb.style.backgroundImage = `url("${preset.customImage}")`;
+    }
     const text = make<HTMLSpanElement>("span", "preset-name");
     const state = preset.id === activeId ? "正在使用" : "点击使用";
     text.append(make("strong", "", preset.name), make("small", "", `${shapeLabel} · ${state}`));
@@ -368,9 +423,27 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
     changed(true);
   });
   presetPanel.append(presetHead, list, duplicate);
+  const isCustom = kind === "trail"
+    ? !DEFAULT_CONFIG.trails.some((preset) => preset.id === activeId)
+    : !DEFAULT_CONFIG.clicks.some((preset) => preset.id === activeId);
+  if (isCustom) {
+    const remove = make<HTMLButtonElement>("button", "secondary-button full danger-button", "删除当前副本");
+    remove.addEventListener("click", () => {
+      const index = presets.findIndex((preset) => preset.id === activeId);
+      if (index < 0) return;
+      if (!window.confirm(`确定删除预设“${presets[index].name}”吗？此操作不可撤销。`)) return;
+      const [removed] = presets.splice(index, 1);
+      const fallback = presets[Math.min(index, presets.length - 1)]
+        ?? (kind === "trail" ? DEFAULT_CONFIG.trails[0] : DEFAULT_CONFIG.clicks[0]);
+      if (kind === "trail") config.activeTrailId = fallback.id;
+      else config.activeClickId = fallback.id;
+      changed(true);
+      toast(`已删除预设“${removed.name}”`);
+    });
+    presetPanel.append(remove);
+  }
 
   const editor = make<HTMLDivElement>("div", "editor-column");
-  editor.append(previewPanel());
   const panel = make<HTMLDivElement>("div", "parameters-panel");
   const heading = make<HTMLDivElement>("div", "panel-heading parameter-heading");
   const nameBox = make<HTMLDivElement>("div", "preset-title-edit");
@@ -411,9 +484,14 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
       rangeControl("粒子间距", preset.spacing, 2, 40, 1, "px", (value) => { preset.spacing = value; changed(); }),
       rangeControl("扩散速度", preset.spreadSpeed, 0, 120, 1, "px/s", (value) => { preset.spreadSpeed = value; changed(); }),
       rangeControl("旋转速度", preset.rotationSpeed, 0, 12, 0.2, "rad/s", (value) => { preset.rotationSpeed = value; changed(); }),
+      rangeControl("大小随机", Math.round(preset.sizeJitter * 100), 0, 75, 5, "%", (value) => { preset.sizeJitter = value / 100; changed(); }),
+      rangeControl("重力", preset.gravity, -120, 240, 10, "px/s²", (value) => { preset.gravity = value; changed(); }),
+      rangeControl("漂浮幅度", preset.wander, 0, 60, 1, "px", (value) => { preset.wander = value; changed(); }),
+      rangeControl("淡出曲线", preset.fadePower, 0.6, 3, 0.1, "×", (value) => { preset.fadePower = value; changed(); }),
       colorControl("起始颜色", preset.startColor, (value) => { preset.startColor = value; changed(); }),
       colorControl("结束颜色", preset.endColor, (value) => { preset.endColor = value; changed(); }),
     );
+    if (preset.shape === "text") grid.append(particleTextControl(preset));
   } else {
     const preset = activeClick(config);
     grid.append(
@@ -422,11 +500,29 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
       rangeControl("持续时间", preset.duration, 150, 2000, 50, "ms", (value) => { preset.duration = value; changed(); }),
       rangeControl("辉光强度", preset.glow, 0.2, 2, 0.1, "×", (value) => { preset.glow = value; changed(); }),
       rangeControl("元素数量", preset.count, 6, 96, 1, "个", (value) => { preset.count = value; changed(); }),
+      rangeControl("大小随机", Math.round(preset.sizeJitter * 100), 0, 75, 5, "%", (value) => { preset.sizeJitter = value / 100; changed(); }),
+      rangeControl("重力", preset.gravity, -120, 240, 10, "px/s²", (value) => { preset.gravity = value; changed(); }),
+      rangeControl("漂浮幅度", preset.wander, 0, 60, 1, "px", (value) => { preset.wander = value; changed(); }),
+      rangeControl("淡出曲线", preset.fadePower, 0.6, 3, 0.1, "×", (value) => { preset.fadePower = value; changed(); }),
       colorControl("主题色", preset.color, (value) => { preset.color = value; changed(); }),
       colorControl("消散颜色", preset.endColor, (value) => { preset.endColor = value; changed(); }),
     );
+    if (preset.shape === "text") grid.append(particleTextControl(preset));
   }
   panel.append(heading, grid);
+  const currentPreset = kind === "trail" ? activeTrail(config) : activeClick(config);
+  if (currentPreset.shape === "image") panel.append(particleImageControl(currentPreset));
+  if (kind === "trail") {
+    const preset = activeTrail(config);
+    const follow = toggleControl(
+      "跟随鼠标移动方向",
+      "让粒子朝向跟随拖尾方向，关闭时使用随机角度",
+      preset.followMovement,
+      (value) => { preset.followMovement = value; changed(); },
+    );
+    follow.classList.add("particle-follow");
+    panel.append(follow);
+  }
   if (kind === "click") {
     const preset = activeClick(config);
     const buttons = make<HTMLDivElement>("div", "mouse-buttons");
@@ -568,10 +664,6 @@ function aboutSettings(): HTMLElement {
 }
 
 function render(): void {
-  previewObserver?.disconnect();
-  clearInterval(previewStatsTimer);
-  preview?.clear();
-  preview = undefined;
   document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === activeTab);
   });

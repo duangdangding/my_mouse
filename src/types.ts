@@ -1,9 +1,20 @@
 export type MouseButton = "left" | "right" | "middle";
-export type TrailShape = "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune";
-export type ClickShape = "ripple" | "star" | "firefly" | "shard" | "hex" | "magic";
+export type CustomShape = "heart" | "snowflake" | "diamond" | "text" | "image";
+export type TrailShape = "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune" | CustomShape;
+export type ClickShape = "ripple" | "star" | "firefly" | "shard" | "hex" | "magic" | CustomShape;
 export type EffectShape = TrailShape | ClickShape;
 
-export interface TrailPreset {
+export interface ParticleCustomization {
+  customText: string;
+  customImage: string;
+  originalColor: boolean;
+  sizeJitter: number;
+  gravity: number;
+  wander: number;
+  fadePower: number;
+}
+
+export interface TrailPreset extends ParticleCustomization {
   id: string;
   name: string;
   shape: TrailShape;
@@ -15,9 +26,10 @@ export interface TrailPreset {
   endColor: string;
   spreadSpeed: number;
   rotationSpeed: number;
+  followMovement: boolean;
 }
 
-export interface ClickPreset {
+export interface ClickPreset extends ParticleCustomization {
   id: string;
   name: string;
   shape: ClickShape;

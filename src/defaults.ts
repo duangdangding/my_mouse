@@ -1,4 +1,26 @@
-import type { AppConfig } from "./types";
+import type { AppConfig, ClickPreset, ParticleCustomization, TrailPreset } from "./types";
+
+const PARTICLE_DEFAULTS: ParticleCustomization = {
+  customText: "✦",
+  customImage: "",
+  originalColor: false,
+  sizeJitter: 0.25,
+  gravity: 0,
+  wander: 0,
+  fadePower: 1.45,
+};
+
+type TrailInput = Omit<TrailPreset, keyof ParticleCustomization | "followMovement"> &
+  Partial<ParticleCustomization & Pick<TrailPreset, "followMovement">>;
+type ClickInput = Omit<ClickPreset, keyof ParticleCustomization> & Partial<ParticleCustomization>;
+
+function trail(preset: TrailInput): TrailPreset {
+  return { ...PARTICLE_DEFAULTS, followMovement: false, ...preset };
+}
+
+function click(preset: ClickInput): ClickPreset {
+  return { ...PARTICLE_DEFAULTS, ...preset };
+}
 
 export const DEFAULT_CONFIG: AppConfig = {
   masterEnabled: true,
@@ -10,7 +32,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   launchAtStartup: false,
   silentStart: true,
   trails: [
-    {
+    trail({
       id: "trail-nebula",
       name: "星云蓝",
       shape: "glow",
@@ -22,8 +44,8 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#7657FF",
       spreadSpeed: 18,
       rotationSpeed: 1.8,
-    },
-    {
+    }),
+    trail({
       id: "trail-sakura",
       name: "樱花粉",
       shape: "petal",
@@ -35,8 +57,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#FF4D9D",
       spreadSpeed: 24,
       rotationSpeed: 2.4,
-    },
-    {
+      wander: 9,
+      fadePower: 1.2,
+    }),
+    trail({
       id: "trail-aurora",
       name: "极光绿",
       shape: "ribbon",
@@ -48,8 +72,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#24C8A5",
       spreadSpeed: 4,
       rotationSpeed: 0.2,
-    },
-    {
+      followMovement: true,
+      fadePower: 1.05,
+    }),
+    trail({
       id: "trail-sunset",
       name: "落日橙",
       shape: "spark",
@@ -61,8 +87,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#FF5C38",
       spreadSpeed: 42,
       rotationSpeed: 4.8,
-    },
-    {
+      followMovement: true,
+      gravity: 32,
+    }),
+    trail({
       id: "trail-quantum",
       name: "量子光轨",
       shape: "circuit",
@@ -74,8 +102,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#3578FF",
       spreadSpeed: 6,
       rotationSpeed: 0.2,
-    },
-    {
+      followMovement: true,
+      fadePower: 1.15,
+    }),
+    trail({
       id: "trail-arcane",
       name: "秘法符文",
       shape: "rune",
@@ -87,10 +117,12 @@ export const DEFAULT_CONFIG: AppConfig = {
       endColor: "#8B5CF6",
       spreadSpeed: 12,
       rotationSpeed: 1.2,
-    },
+      wander: 4,
+      fadePower: 1.2,
+    }),
   ],
   clicks: [
-    {
+    click({
       id: "click-ripple",
       name: "涟漪蓝",
       shape: "ripple",
@@ -103,8 +135,9 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: false,
       middle: false,
-    },
-    {
+      fadePower: 1.65,
+    }),
+    click({
       id: "click-stars",
       name: "星芒紫",
       shape: "star",
@@ -117,8 +150,8 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: true,
       middle: false,
-    },
-    {
+    }),
+    click({
       id: "click-firefly",
       name: "萤火绿",
       shape: "firefly",
@@ -131,8 +164,9 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: false,
       middle: false,
-    },
-    {
+      wander: 16,
+    }),
+    click({
       id: "click-gold",
       name: "熔金橙",
       shape: "shard",
@@ -145,8 +179,9 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: true,
       middle: true,
-    },
-    {
+      gravity: 110,
+    }),
+    click({
       id: "click-matrix",
       name: "矩阵脉冲",
       shape: "hex",
@@ -159,8 +194,9 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: true,
       middle: false,
-    },
-    {
+      fadePower: 1.65,
+    }),
+    click({
       id: "click-arcane",
       name: "秘法魔阵",
       shape: "magic",
@@ -173,7 +209,8 @@ export const DEFAULT_CONFIG: AppConfig = {
       left: true,
       right: true,
       middle: false,
-    },
+      fadePower: 1.1,
+    }),
   ],
 };
 
