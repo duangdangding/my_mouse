@@ -1,8 +1,11 @@
 import { activeClick, activeTrail } from "./types";
-import type { AppConfig, ClickPreset, MouseButton, TrailPreset } from "./types";
+import type { AppConfig, ClickPreset, EffectShape, MouseButton, TrailPreset } from "./types";
 
 const COLOR_STEPS = 24;
 const SPRITE_SIZE = 64;
+const ATLAS_PADDING = 24;
+const ATLAS_SIZE = SPRITE_SIZE + ATLAS_PADDING * 2;
+const ATLAS_SCALE = ATLAS_SIZE / SPRITE_SIZE;
 const MAX_TRAIL_PARTICLES = 1400;
 const MAX_CLICK_PARTICLES = 900;
 
@@ -24,30 +27,331 @@ function mixColor(from: Rgb, to: Rgb, amount: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-class GlowAtlas {
+function traceStar(context: CanvasRenderingContext2D, points: number, outer: number, inner: number): void {
+  context.beginPath();
+  for (let index = 0; index < points * 2; index += 1) {
+    const radius = index % 2 === 0 ? outer : inner;
+    const angle = -Math.PI / 2 + (index * Math.PI) / points;
+    const x = 32 + Math.cos(angle) * radius;
+    const y = 32 + Math.sin(angle) * radius;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+}
+
+function tracePetal(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  context.moveTo(32, 57);
+  context.bezierCurveTo(8, 46, 11, 15, 32, 7);
+  context.bezierCurveTo(53, 15, 56, 46, 32, 57);
+  context.closePath();
+}
+
+function traceShard(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  context.moveTo(32, 2);
+  context.lineTo(46, 32);
+  context.lineTo(32, 62);
+  context.lineTo(18, 32);
+  context.closePath();
+}
+
+function traceCircuit(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  context.moveTo(3, 32);
+  context.lineTo(19, 32);
+  context.lineTo(27, 24);
+  context.lineTo(44, 24);
+  context.lineTo(51, 17);
+  context.lineTo(61, 17);
+  context.moveTo(19, 32);
+  context.lineTo(27, 40);
+  context.lineTo(46, 40);
+  context.lineTo(53, 47);
+  context.lineTo(61, 47);
+  context.moveTo(35, 24);
+  context.lineTo(35, 12);
+  context.lineTo(45, 12);
+  context.moveTo(35, 40);
+  context.lineTo(35, 52);
+  context.lineTo(25, 52);
+}
+
+function traceHexagon(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  for (let index = 0; index < 6; index += 1) {
+    const angle = (index * Math.PI) / 3;
+    const x = 32 + Math.cos(angle) * 26;
+    const y = 32 + Math.sin(angle) * 26;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+}
+
+function traceRune(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  context.moveTo(32, 7);
+  context.lineTo(32, 57);
+  context.moveTo(32, 14);
+  context.lineTo(48, 25);
+  context.lineTo(32, 37);
+  context.moveTo(32, 25);
+  context.lineTo(18, 35);
+  context.moveTo(32, 42);
+  context.lineTo(47, 52);
+  context.moveTo(27, 8);
+  context.lineTo(32, 3);
+  context.lineTo(37, 8);
+  context.lineTo(32, 13);
+  context.closePath();
+}
+
+function traceMagicCircle(context: CanvasRenderingContext2D): void {
+  context.beginPath();
+  for (const radius of [29, 24, 8]) {
+    context.moveTo(32 + radius, 32);
+    context.arc(32, 32, radius, 0, Math.PI * 2);
+  }
+  for (let triangle = 0; triangle < 2; triangle += 1) {
+    for (let index = 0; index < 3; index += 1) {
+      const angle = -Math.PI / 2 + triangle * Math.PI / 3 + index * Math.PI * 2 / 3;
+      const x = 32 + Math.cos(angle) * 19;
+      const y = 32 + Math.sin(angle) * 19;
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.closePath();
+  }
+  for (let index = 0; index < 12; index += 1) {
+    const angle = index * Math.PI / 6;
+    const inner = index % 2 === 0 ? 25 : 26.5;
+    context.moveTo(32 + Math.cos(angle) * inner, 32 + Math.sin(angle) * inner);
+    context.lineTo(32 + Math.cos(angle) * 28, 32 + Math.sin(angle) * 28);
+  }
+}
+
+function paintShape(context: CanvasRenderingContext2D, shape: EffectShape, color: string): void {
+  context.save();
+  if (shape === "glow" || shape === "firefly") {
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(shape === "firefly" ? 0.2 : 0.12, color);
+    gradient.addColorStop(shape === "firefly" ? 0.34 : 0.38, color);
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+  } else if (shape === "petal") {
+    context.strokeStyle = color;
+    context.globalAlpha = 0.16;
+    context.lineWidth = 8;
+    tracePetal(context);
+    context.stroke();
+    const gradient = context.createLinearGradient(22, 8, 42, 58);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(0.3, color);
+    gradient.addColorStop(1, color);
+    context.globalAlpha = 0.92;
+    context.fillStyle = gradient;
+    tracePetal(context);
+    context.fill();
+    context.globalAlpha = 0.48;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 1.4;
+    context.beginPath();
+    context.moveTo(32, 49);
+    context.quadraticCurveTo(25, 31, 32, 15);
+    context.stroke();
+  } else if (shape === "ribbon") {
+    const gradient = context.createLinearGradient(0, 0, SPRITE_SIZE, 0);
+    gradient.addColorStop(0, "rgba(0,0,0,0)");
+    gradient.addColorStop(0.2, color);
+    gradient.addColorStop(0.5, "#ffffff");
+    gradient.addColorStop(0.8, color);
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.moveTo(2, 32);
+    context.quadraticCurveTo(16, 20, 32, 23);
+    context.quadraticCurveTo(48, 26, 62, 32);
+    context.quadraticCurveTo(48, 38, 32, 41);
+    context.quadraticCurveTo(16, 44, 2, 32);
+    context.closePath();
+    context.fill();
+  } else if (shape === "spark" || shape === "star") {
+    const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 31);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(0.3, color);
+    gradient.addColorStop(1, color);
+    context.strokeStyle = color;
+    context.globalAlpha = 0.16;
+    context.lineWidth = 7;
+    traceStar(context, shape === "star" ? 5 : 4, 29, shape === "star" ? 12 : 6);
+    context.stroke();
+    context.globalAlpha = 0.95;
+    context.fillStyle = gradient;
+    traceStar(context, shape === "star" ? 5 : 4, 29, shape === "star" ? 12 : 6);
+    context.fill();
+  } else if (shape === "shard") {
+    context.strokeStyle = color;
+    context.globalAlpha = 0.18;
+    context.lineWidth = 7;
+    traceShard(context);
+    context.stroke();
+    const gradient = context.createLinearGradient(22, 4, 42, 60);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(0.35, color);
+    gradient.addColorStop(1, color);
+    context.globalAlpha = 0.94;
+    context.fillStyle = gradient;
+    traceShard(context);
+    context.fill();
+    context.globalAlpha = 0.55;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(32, 8);
+    context.lineTo(26, 32);
+    context.lineTo(32, 55);
+    context.stroke();
+  } else if (shape === "circuit") {
+    context.lineCap = "square";
+    context.lineJoin = "miter";
+    context.strokeStyle = color;
+    context.globalAlpha = 0.18;
+    context.lineWidth = 7;
+    traceCircuit(context);
+    context.stroke();
+    context.globalAlpha = 0.9;
+    context.lineWidth = 2.4;
+    traceCircuit(context);
+    context.stroke();
+    context.globalAlpha = 0.68;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 0.8;
+    traceCircuit(context);
+    context.stroke();
+    for (const [x, y] of [[19, 32], [35, 24], [46, 40], [53, 47], [45, 12], [25, 52]] as const) {
+      context.globalAlpha = 0.95;
+      context.fillStyle = color;
+      context.fillRect(x - 3, y - 3, 6, 6);
+      context.fillStyle = "#ffffff";
+      context.fillRect(x - 1, y - 1, 2, 2);
+    }
+  } else if (shape === "hex") {
+    context.strokeStyle = color;
+    for (const [lineWidth, alpha] of [[9, 0.14], [3.5, 0.78], [1, 0.95]] as const) {
+      context.globalAlpha = alpha;
+      context.lineWidth = lineWidth;
+      traceHexagon(context);
+      context.stroke();
+    }
+    context.globalAlpha = 0.75;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 0.7;
+    traceHexagon(context);
+    context.stroke();
+    context.fillStyle = color;
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (index * Math.PI) / 3;
+      const x = 32 + Math.cos(angle) * 26;
+      const y = 32 + Math.sin(angle) * 26;
+      context.globalAlpha = 0.9;
+      context.fillRect(x - 2.5, y - 2.5, 5, 5);
+    }
+  } else if (shape === "rune") {
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = color;
+    context.globalAlpha = 0.18;
+    context.lineWidth = 8;
+    traceRune(context);
+    context.stroke();
+    context.globalAlpha = 0.94;
+    context.lineWidth = 3;
+    traceRune(context);
+    context.stroke();
+    context.globalAlpha = 0.72;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 0.9;
+    traceRune(context);
+    context.stroke();
+  } else if (shape === "magic") {
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = color;
+    for (const [lineWidth, alpha] of [[7, 0.15], [2.1, 0.88], [0.7, 0.9]] as const) {
+      context.globalAlpha = alpha;
+      context.lineWidth = lineWidth;
+      traceMagicCircle(context);
+      context.stroke();
+    }
+    context.globalAlpha = 0.72;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 0.55;
+    traceMagicCircle(context);
+    context.stroke();
+    context.fillStyle = color;
+    for (let index = 0; index < 6; index += 1) {
+      const angle = -Math.PI / 2 + index * Math.PI / 3;
+      const x = 32 + Math.cos(angle) * 24;
+      const y = 32 + Math.sin(angle) * 24;
+      context.globalAlpha = 0.9;
+      context.beginPath();
+      context.arc(x, y, 1.8, 0, Math.PI * 2);
+      context.fill();
+    }
+  } else {
+    context.strokeStyle = color;
+    for (const [lineWidth, alpha] of [[9, 0.12], [4, 0.72], [1.2, 0.9]] as const) {
+      context.globalAlpha = alpha;
+      context.lineWidth = lineWidth;
+      context.beginPath();
+      context.arc(32, 32, 25, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.globalAlpha = 0.85;
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 0.8;
+    context.beginPath();
+    context.arc(32, 32, 25, 0, Math.PI * 2);
+    context.stroke();
+  }
+  context.restore();
+}
+
+class ShapeAtlas {
   private sprites: HTMLCanvasElement[] = [];
   private key = "";
+  shape: EffectShape = "glow";
 
-  rebuild(fromHex: string, toHex: string): void {
-    const key = `${fromHex}-${toHex}`;
+  rebuild(fromHex: string, toHex: string, shape: EffectShape, glow: number): void {
+    const key = `${fromHex}-${toHex}-${shape}-${glow.toFixed(2)}`;
     if (key === this.key) return;
     this.key = key;
+    this.shape = shape;
     this.sprites = [];
     const from = parseColor(fromHex);
     const to = parseColor(toHex);
     for (let index = 0; index < COLOR_STEPS; index += 1) {
+      const sprite = document.createElement("canvas");
+      sprite.width = SPRITE_SIZE;
+      sprite.height = SPRITE_SIZE;
+      const spriteContext = sprite.getContext("2d")!;
+      paintShape(spriteContext, shape, mixColor(from, to, index / (COLOR_STEPS - 1)));
+
+      // 光晕只在配置变化时预渲染，逐帧绘制不启用滤镜或阴影。
       const canvas = document.createElement("canvas");
-      canvas.width = SPRITE_SIZE;
-      canvas.height = SPRITE_SIZE;
+      canvas.width = ATLAS_SIZE;
+      canvas.height = ATLAS_SIZE;
       const context = canvas.getContext("2d")!;
-      const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
-      const color = mixColor(from, to, index / (COLOR_STEPS - 1));
-      gradient.addColorStop(0, "#ffffff");
-      gradient.addColorStop(0.12, color);
-      gradient.addColorStop(0.38, color);
-      gradient.addColorStop(1, "rgba(0,0,0,0)");
-      context.fillStyle = gradient;
-      context.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
+      context.filter = `blur(${(2 + glow * 5).toFixed(1)}px)`;
+      context.globalAlpha = Math.min(0.85, 0.18 + glow * 0.27);
+      context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
+      context.filter = "none";
+      context.globalAlpha = 1;
+      context.drawImage(sprite, ATLAS_PADDING, ATLAS_PADDING);
       this.sprites.push(canvas);
     }
   }
@@ -110,7 +414,7 @@ class ParticlePool {
     this.spin[index] = spin;
   }
 
-  update(deltaSeconds: number): void {
+  update(deltaSeconds: number, gravity = 0, wander = 0): void {
     let index = 0;
     while (index < this.count) {
       const nextAge = this.age[index] + deltaSeconds * 1000;
@@ -119,22 +423,74 @@ class ParticlePool {
         continue;
       }
       this.age[index] = nextAge;
+      this.vy[index] += gravity * deltaSeconds;
       this.x[index] += this.vx[index] * deltaSeconds;
       this.y[index] += this.vy[index] * deltaSeconds;
+      if (wander > 0) {
+        const phase = nextAge * 0.006 + this.rotation[index];
+        this.x[index] += Math.cos(phase) * wander * deltaSeconds;
+        this.y[index] += Math.sin(phase * 1.31) * wander * deltaSeconds;
+      }
       this.rotation[index] += this.spin[index] * deltaSeconds;
       index += 1;
     }
   }
 
-  draw(context: CanvasRenderingContext2D, atlas: GlowAtlas, glow: number, expanding: boolean): void {
+  draw(context: CanvasRenderingContext2D, atlas: ShapeAtlas): void {
     for (let index = 0; index < this.count; index += 1) {
       const progress = this.age[index] / this.life[index];
-      const size = this.size[index] * (expanding ? 0.8 + progress * 1.1 : 0.75 + progress * 0.65);
-      const alpha = (1 - progress) ** 1.45 * Math.min(2, glow) * 0.72;
+      const baseSize = this.size[index];
+      let size = baseSize * (0.75 + progress * 0.65);
+      let scaleX = 1;
+      let scaleY = 1;
+      let alpha = (1 - progress) ** 1.45 * 0.9;
+      if (atlas.shape === "petal") {
+        size = baseSize * (0.88 + progress * 0.3);
+        scaleX = 0.82;
+        scaleY = 1.16;
+        alpha = (1 - progress) ** 1.2 * 0.9;
+      } else if (atlas.shape === "ribbon") {
+        size = baseSize * (0.9 + progress * 0.3);
+        scaleX = 2.65;
+        scaleY = 0.62;
+        alpha = (1 - progress) ** 1.05 * 0.82;
+      } else if (atlas.shape === "circuit") {
+        size = baseSize * (0.9 + progress * 0.25);
+        scaleX = 1.75;
+        scaleY = 0.9;
+        alpha = (1 - progress) ** 1.15 * 0.92;
+        alpha *= 0.88 + Math.sin(this.age[index] * 0.02 + this.rotation[index]) * 0.12;
+      } else if (atlas.shape === "rune") {
+        size = baseSize * (0.85 + progress * 0.4);
+        scaleX = 0.9;
+        scaleY = 1.1;
+        alpha = (1 - progress) ** 1.2 * 0.92;
+      } else if (atlas.shape === "spark") {
+        size = baseSize * (0.8 + progress * 0.5);
+        scaleX = 0.85;
+        scaleY = 1.25;
+      } else if (atlas.shape === "ripple" || atlas.shape === "hex") {
+        size = baseSize * (0.28 + progress * 0.88);
+        alpha = (1 - progress) ** 1.65 * 0.94;
+      } else if (atlas.shape === "magic") {
+        size = baseSize * (0.55 + progress * 0.45);
+        alpha = (1 - progress) ** 1.1 * 0.88 * Math.min(1, 0.15 + progress * 10);
+      } else if (atlas.shape === "star") {
+        size = baseSize * (0.7 + progress * 0.9);
+      } else if (atlas.shape === "firefly") {
+        size = baseSize * (0.8 + progress * 0.5);
+        alpha *= 0.72 + Math.sin(this.age[index] * 0.018 + this.rotation[index]) * 0.28;
+      } else if (atlas.shape === "shard") {
+        size = baseSize * (0.9 + progress * 0.35);
+        scaleX = 0.65;
+        scaleY = 1.5;
+      }
+      const width = size * scaleX * ATLAS_SCALE;
+      const height = size * scaleY * ATLAS_SCALE;
       context.globalAlpha = alpha;
       context.setTransform(1, 0, 0, 1, this.x[index], this.y[index]);
       context.rotate(this.rotation[index]);
-      context.drawImage(atlas.sprite(progress), -size / 2, -size / 2, size, size);
+      context.drawImage(atlas.sprite(progress), -width / 2, -height / 2, width, height);
     }
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.globalAlpha = 1;
@@ -161,8 +517,8 @@ export class EffectsRenderer {
   private readonly context: CanvasRenderingContext2D;
   private readonly trailPool = new ParticlePool(MAX_TRAIL_PARTICLES);
   private readonly clickPool = new ParticlePool(MAX_CLICK_PARTICLES);
-  private readonly trailAtlas = new GlowAtlas();
-  private readonly clickAtlas = new GlowAtlas();
+  private readonly trailAtlas = new ShapeAtlas();
+  private readonly clickAtlas = new ShapeAtlas();
   private config: AppConfig;
   private trailPreset: TrailPreset;
   private clickPreset: ClickPreset;
@@ -223,10 +579,18 @@ export class EffectsRenderer {
     }
     const steps = Math.min(120, Math.floor(distance / spacing));
     const preset = this.trailPreset;
+    const shape = preset.shape ?? "glow";
+    const movementAngle = Math.atan2(deltaY, deltaX);
     for (let step = 1; step <= steps; step += 1) {
       const amount = step / steps;
-      const angle = Math.random() * Math.PI * 2;
+      const angle = shape === "petal"
+        ? Math.PI / 2 + (Math.random() - 0.5) * 2.4
+        : Math.random() * Math.PI * 2;
       const speed = Math.random() * preset.spreadSpeed;
+      let rotation = Math.random() * Math.PI * 2;
+      if (shape === "ribbon") rotation = movementAngle + (Math.random() - 0.5) * 0.08;
+      else if (shape === "circuit") rotation = movementAngle;
+      else if (shape === "spark") rotation = movementAngle + (Math.random() - 0.5) * 0.5;
       this.trailPool.spawn(
         this.lastX + deltaX * amount,
         this.lastY + deltaY * amount,
@@ -234,7 +598,7 @@ export class EffectsRenderer {
         Math.sin(angle) * speed,
         preset.lifetime * (0.82 + Math.random() * 0.18),
         preset.width * (0.75 + Math.random() * 0.5),
-        Math.random() * Math.PI * 2,
+        rotation,
         (Math.random() - 0.5) * preset.rotationSpeed * 2,
       );
     }
@@ -247,20 +611,71 @@ export class EffectsRenderer {
   click(x: number, y: number, button: MouseButton): void {
     if (!this.config.masterEnabled || !this.config.clickEnabled || !this.clickPreset[button]) return;
     const preset = this.clickPreset;
+    const shape = preset.shape ?? "ripple";
     const durationSeconds = preset.duration / 1000;
+    if (shape === "ripple" || shape === "hex") {
+      const rings = Math.max(2, Math.min(5, Math.round(preset.count / 8)));
+      for (let index = 0; index < rings; index += 1) {
+        this.clickPool.spawn(
+          x,
+          y,
+          0,
+          0,
+          preset.duration * (0.84 + index * 0.06),
+          preset.radius * 2.5 * (0.65 + index * 0.18),
+          0,
+          0,
+        );
+      }
+      this.wake();
+      return;
+    }
+    if (shape === "magic") {
+      for (let index = 0; index < 2; index += 1) {
+        this.clickPool.spawn(
+          x,
+          y,
+          0,
+          0,
+          preset.duration * (1 + index * 0.08),
+          preset.radius * 1.8 * (1 + index * 0.18),
+          index * Math.PI / 6,
+          index === 0 ? 0.85 : -0.55,
+        );
+      }
+      this.wake();
+      return;
+    }
     for (let index = 0; index < preset.count; index += 1) {
-      const angle = (index / preset.count) * Math.PI * 2 + (Math.random() - 0.5) * 0.16;
-      const speed = (preset.radius / durationSeconds) * (0.65 + Math.random() * 0.4);
-      const size = Math.max(5, Math.min(18, preset.radius / Math.sqrt(preset.count)));
+      const angle = shape === "firefly"
+        ? Math.random() * Math.PI * 2
+        : (index / preset.count) * Math.PI * 2 + (Math.random() - 0.5) * 0.16;
+      const speedScale = shape === "firefly"
+        ? 0.18 + Math.random() * 0.32
+        : shape === "shard"
+          ? 0.9 + Math.random() * 0.5
+          : 0.65 + Math.random() * 0.45;
+      const speed = (preset.radius / durationSeconds) * speedScale;
+      const baseSize = preset.radius / Math.sqrt(preset.count);
+      const size = shape === "firefly"
+        ? Math.max(5, Math.min(11, baseSize * 0.75))
+        : shape === "star"
+          ? Math.max(8, Math.min(26, baseSize * 1.25))
+          : Math.max(8, Math.min(24, baseSize * 1.2));
+      const spin = shape === "star"
+        ? (Math.random() - 0.5) * 3
+        : shape === "shard"
+          ? (Math.random() - 0.5) * 8
+          : 0;
       this.clickPool.spawn(
         x,
         y,
         Math.cos(angle) * speed,
         Math.sin(angle) * speed,
-        preset.duration * (0.78 + Math.random() * 0.22),
+        preset.duration * (shape === "firefly" ? 0.85 + Math.random() * 0.35 : 0.78 + Math.random() * 0.22),
         size,
-        angle,
-        0,
+        shape === "star" || shape === "firefly" ? Math.random() * Math.PI * 2 : angle,
+        spin,
       );
     }
     this.wake();
@@ -285,8 +700,8 @@ export class EffectsRenderer {
   }
 
   private rebuildAtlases(): void {
-    this.trailAtlas.rebuild(this.trailPreset.startColor, this.trailPreset.endColor);
-    this.clickAtlas.rebuild(this.clickPreset.color, this.clickPreset.endColor);
+    this.trailAtlas.rebuild(this.trailPreset.startColor, this.trailPreset.endColor, this.trailPreset.shape ?? "glow", this.trailPreset.glow);
+    this.clickAtlas.rebuild(this.clickPreset.color, this.clickPreset.endColor, this.clickPreset.shape ?? "ripple", this.clickPreset.glow);
   }
 
   private wake(): void {
@@ -301,15 +716,17 @@ export class EffectsRenderer {
     }
     const delta = this.lastFrameAt ? Math.min(0.06, (now - this.lastFrameAt) / 1000) : 1 / this.config.fps;
     this.lastFrameAt = now;
-    this.trailPool.update(delta);
-    this.clickPool.update(delta);
+    const trailShape = this.trailPreset.shape ?? "glow";
+    const clickShape = this.clickPreset.shape ?? "ripple";
+    this.trailPool.update(delta, trailShape === "spark" ? 32 : 0, trailShape === "petal" ? 9 : trailShape === "rune" ? 4 : 0);
+    this.clickPool.update(delta, clickShape === "shard" ? 110 : 0, clickShape === "firefly" ? 16 : 0);
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.context.globalCompositeOperation = "lighter";
     if (this.config.masterEnabled && this.config.trailEnabled) {
-      this.trailPool.draw(this.context, this.trailAtlas, this.trailPreset.glow, false);
+      this.trailPool.draw(this.context, this.trailAtlas);
     }
     if (this.config.masterEnabled && this.config.clickEnabled) {
-      this.clickPool.draw(this.context, this.clickAtlas, this.clickPreset.glow, true);
+      this.clickPool.draw(this.context, this.clickAtlas);
     }
     this.context.globalCompositeOperation = "source-over";
     this.measuredFrames += 1;

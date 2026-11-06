@@ -6,6 +6,8 @@ use std::{fs, path::PathBuf};
 pub struct TrailPreset {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub shape: String,
     pub width: f32,
     pub lifetime: u32,
     pub glow: f32,
@@ -21,6 +23,7 @@ impl Default for TrailPreset {
         Self {
             id: "trail-nebula".into(),
             name: "星云蓝".into(),
+            shape: "glow".into(),
             width: 18.0,
             lifetime: 900,
             glow: 1.4,
@@ -38,6 +41,8 @@ impl Default for TrailPreset {
 pub struct ClickPreset {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub shape: String,
     pub radius: f32,
     pub duration: u32,
     pub glow: f32,
@@ -54,6 +59,7 @@ impl Default for ClickPreset {
         Self {
             id: "click-ripple".into(),
             name: "涟漪蓝".into(),
+            shape: "ripple".into(),
             radius: 100.0,
             duration: 650,
             glow: 1.4,
@@ -100,38 +106,67 @@ impl Default for AppConfig {
                 TrailPreset {
                     id: "trail-sakura".into(),
                     name: "樱花粉".into(),
-                    width: 22.0,
-                    lifetime: 1100,
+                    shape: "petal".into(),
+                    width: 24.0,
+                    lifetime: 1400,
                     glow: 1.2,
-                    spacing: 8.0,
+                    spacing: 15.0,
                     start_color: "#FFD0E8".into(),
                     end_color: "#FF4D9D".into(),
-                    spread_speed: 22.0,
+                    spread_speed: 24.0,
                     rotation_speed: 2.4,
                 },
                 TrailPreset {
                     id: "trail-aurora".into(),
                     name: "极光绿".into(),
-                    width: 16.0,
-                    lifetime: 1000,
+                    shape: "ribbon".into(),
+                    width: 18.0,
+                    lifetime: 750,
                     glow: 1.6,
-                    spacing: 6.0,
+                    spacing: 5.0,
                     start_color: "#A8FFDC".into(),
                     end_color: "#24C8A5".into(),
-                    spread_speed: 14.0,
-                    rotation_speed: 1.2,
+                    spread_speed: 4.0,
+                    rotation_speed: 0.2,
                 },
                 TrailPreset {
                     id: "trail-sunset".into(),
                     name: "落日橙".into(),
-                    width: 26.0,
-                    lifetime: 800,
+                    shape: "spark".into(),
+                    width: 20.0,
+                    lifetime: 850,
                     glow: 1.3,
-                    spacing: 9.0,
+                    spacing: 11.0,
                     start_color: "#FFE29A".into(),
                     end_color: "#FF5C38".into(),
-                    spread_speed: 28.0,
-                    rotation_speed: 3.0,
+                    spread_speed: 42.0,
+                    rotation_speed: 4.8,
+                },
+                TrailPreset {
+                    id: "trail-quantum".into(),
+                    name: "量子光轨".into(),
+                    shape: "circuit".into(),
+                    width: 18.0,
+                    lifetime: 950,
+                    glow: 1.7,
+                    spacing: 12.0,
+                    start_color: "#8FFFF4".into(),
+                    end_color: "#3578FF".into(),
+                    spread_speed: 6.0,
+                    rotation_speed: 0.2,
+                },
+                TrailPreset {
+                    id: "trail-arcane".into(),
+                    name: "秘法符文".into(),
+                    shape: "rune".into(),
+                    width: 20.0,
+                    lifetime: 1250,
+                    glow: 1.6,
+                    spacing: 17.0,
+                    start_color: "#F4C4FF".into(),
+                    end_color: "#8B5CF6".into(),
+                    spread_speed: 12.0,
+                    rotation_speed: 1.2,
                 },
             ],
             clicks: vec![
@@ -139,6 +174,7 @@ impl Default for AppConfig {
                 ClickPreset {
                     id: "click-stars".into(),
                     name: "星芒紫".into(),
+                    shape: "star".into(),
                     radius: 130.0,
                     duration: 800,
                     glow: 1.6,
@@ -152,8 +188,9 @@ impl Default for AppConfig {
                 ClickPreset {
                     id: "click-firefly".into(),
                     name: "萤火绿".into(),
+                    shape: "firefly".into(),
                     radius: 85.0,
-                    duration: 900,
+                    duration: 1100,
                     glow: 1.3,
                     count: 24,
                     color: "#E7FF9B".into(),
@@ -165,6 +202,7 @@ impl Default for AppConfig {
                 ClickPreset {
                     id: "click-gold".into(),
                     name: "熔金橙".into(),
+                    shape: "shard".into(),
                     radius: 110.0,
                     duration: 700,
                     glow: 1.5,
@@ -174,6 +212,34 @@ impl Default for AppConfig {
                     left: true,
                     right: true,
                     middle: true,
+                },
+                ClickPreset {
+                    id: "click-matrix".into(),
+                    name: "矩阵脉冲".into(),
+                    shape: "hex".into(),
+                    radius: 120.0,
+                    duration: 800,
+                    glow: 1.7,
+                    count: 32,
+                    color: "#8FFFF4".into(),
+                    end_color: "#3578FF".into(),
+                    left: true,
+                    right: true,
+                    middle: false,
+                },
+                ClickPreset {
+                    id: "click-arcane".into(),
+                    name: "秘法魔阵".into(),
+                    shape: "magic".into(),
+                    radius: 95.0,
+                    duration: 1400,
+                    glow: 1.6,
+                    count: 32,
+                    color: "#F4C4FF".into(),
+                    end_color: "#8B5CF6".into(),
+                    left: true,
+                    right: true,
+                    middle: false,
                 },
             ],
         }
@@ -195,10 +261,33 @@ impl AppConfig {
         if self.clicks.is_empty() {
             self.clicks = AppConfig::default().clicks;
         }
+        let defaults = AppConfig::default();
+        for preset in &defaults.trails {
+            if !self.trails.iter().any(|item| item.id == preset.id) {
+                self.trails.push(preset.clone());
+            }
+        }
+        for preset in &defaults.clicks {
+            if !self.clicks.iter().any(|item| item.id == preset.id) {
+                self.clicks.push(preset.clone());
+            }
+        }
         self.trails.truncate(24);
         self.clicks.truncate(24);
         for preset in &mut self.trails {
             preset.name = clean_name(&preset.name);
+            if preset.shape.is_empty() {
+                preset.shape = match preset.id.as_str() {
+                    "trail-sakura" => "petal",
+                    "trail-aurora" => "ribbon",
+                    "trail-sunset" => "spark",
+                    "trail-quantum" => "circuit",
+                    "trail-arcane" => "rune",
+                    _ => "glow",
+                }
+                .into();
+            }
+            clean_trail_shape(&mut preset.shape);
             preset.width = finite(preset.width, 18.0).clamp(4.0, 64.0);
             preset.lifetime = preset.lifetime.clamp(150, 2500);
             preset.glow = finite(preset.glow, 1.0).clamp(0.2, 2.0);
@@ -210,6 +299,18 @@ impl AppConfig {
         }
         for preset in &mut self.clicks {
             preset.name = clean_name(&preset.name);
+            if preset.shape.is_empty() {
+                preset.shape = match preset.id.as_str() {
+                    "click-stars" => "star",
+                    "click-firefly" => "firefly",
+                    "click-gold" => "shard",
+                    "click-matrix" => "hex",
+                    "click-arcane" => "magic",
+                    _ => "ripple",
+                }
+                .into();
+            }
+            clean_click_shape(&mut preset.shape);
             preset.radius = finite(preset.radius, 100.0).clamp(30.0, 300.0);
             preset.duration = preset.duration.clamp(150, 2000);
             preset.glow = finite(preset.glow, 1.0).clamp(0.2, 2.0);
@@ -236,6 +337,18 @@ fn clean_name(name: &str) -> String {
         "未命名效果".into()
     } else {
         trimmed.chars().take(16).collect()
+    }
+}
+
+fn clean_trail_shape(shape: &mut String) {
+    if !matches!(shape.as_str(), "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune") {
+        *shape = "glow".into();
+    }
+}
+
+fn clean_click_shape(shape: &mut String) {
+    if !matches!(shape.as_str(), "ripple" | "star" | "firefly" | "shard" | "hex" | "magic") {
+        *shape = "ripple".into();
     }
 }
 
@@ -296,12 +409,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_include_four_presets_each() {
+    fn defaults_include_six_presets_each() {
         let config = AppConfig::default();
-        assert_eq!(config.trails.len(), 4);
-        assert_eq!(config.clicks.len(), 4);
+        assert_eq!(config.trails.len(), 6);
+        assert_eq!(config.clicks.len(), 6);
         assert_eq!(config.fps, 60);
         assert!(config.master_enabled);
+    }
+
+    #[test]
+    fn legacy_presets_receive_distinct_shapes() {
+        let mut config = AppConfig::default();
+        config.trails.retain(|preset| !matches!(preset.id.as_str(), "trail-quantum" | "trail-arcane"));
+        config.clicks.retain(|preset| !matches!(preset.id.as_str(), "click-matrix" | "click-arcane"));
+        for preset in &mut config.trails {
+            preset.shape.clear();
+        }
+        for preset in &mut config.clicks {
+            preset.shape.clear();
+        }
+        config.normalize();
+        assert_eq!(config.trails.len(), 6);
+        assert_eq!(config.clicks.len(), 6);
+        assert_eq!(config.trails[0].shape, "glow");
+        assert_eq!(config.trails[1].shape, "petal");
+        assert_eq!(config.trails[2].shape, "ribbon");
+        assert_eq!(config.trails[3].shape, "spark");
+        assert_eq!(config.trails[4].shape, "circuit");
+        assert_eq!(config.trails[5].shape, "rune");
+        assert_eq!(config.clicks[0].shape, "ripple");
+        assert_eq!(config.clicks[1].shape, "star");
+        assert_eq!(config.clicks[2].shape, "firefly");
+        assert_eq!(config.clicks[3].shape, "shard");
+        assert_eq!(config.clicks[4].shape, "hex");
+        assert_eq!(config.clicks[5].shape, "magic");
+        config.trails[0].shape = "invalid".into();
+        config.clicks[0].shape = "invalid".into();
+        config.normalize();
+        assert_eq!(config.trails[0].shape, "glow");
+        assert_eq!(config.clicks[0].shape, "ripple");
     }
 
     #[test]

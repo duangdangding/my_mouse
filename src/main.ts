@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { defaultConfig, DEFAULT_CONFIG } from "./defaults";
 import { EffectsRenderer } from "./renderer";
 import { activeClick, activeTrail, isTauri } from "./types";
-import type { AppConfig, MouseButton } from "./types";
+import type { AppConfig, ClickShape, EffectShape, MouseButton, TrailShape } from "./types";
 import "./style.css";
 
 type Tab = "trail" | "click" | "general" | "about";
@@ -59,6 +59,53 @@ const titles: Record<Tab, [string, string]> = {
   about: ["关于与更新", "保持鼠标流光始终处于最新状态。"],
 };
 
+const TRAIL_SHAPE_OPTIONS = [
+  ["glow", "圆形光点"],
+  ["petal", "樱花花瓣"],
+  ["ribbon", "流动缎带"],
+  ["spark", "四芒星火"],
+  ["circuit", "电路光轨"],
+  ["rune", "悬浮符文"],
+] as const;
+const CLICK_SHAPE_OPTIONS = [
+  ["ripple", "扩散圆环"],
+  ["star", "五角星芒"],
+  ["firefly", "漂浮萤火"],
+  ["shard", "棱镜碎片"],
+  ["hex", "六边形脉冲"],
+  ["magic", "旋转魔法阵"],
+] as const;
+const TRAIL_SHAPE_LABELS: Record<TrailShape, string> = {
+  glow: "圆形光点",
+  petal: "樱花花瓣",
+  ribbon: "流动缎带",
+  spark: "四芒星火",
+  circuit: "电路光轨",
+  rune: "悬浮符文",
+};
+const CLICK_SHAPE_LABELS: Record<ClickShape, string> = {
+  ripple: "扩散圆环",
+  star: "五角星芒",
+  firefly: "漂浮萤火",
+  shard: "棱镜碎片",
+  hex: "六边形脉冲",
+  magic: "旋转魔法阵",
+};
+const SHAPE_SYMBOLS: Record<EffectShape, string> = {
+  glow: "●",
+  petal: "❀",
+  ribbon: "≈",
+  spark: "✦",
+  circuit: "⌁",
+  rune: "ᚱ",
+  ripple: "◎",
+  star: "★",
+  firefly: "•",
+  shard: "◆",
+  hex: "⬡",
+  magic: "✥",
+};
+
 function setSaveState(state: SaveState): void {
   saveState.className = `save-state ${state}`;
   saveState.querySelector("b")!.textContent = state === "saved" ? "已自动保存" : state === "saving" ? "正在保存…" : "保存失败";
@@ -75,7 +122,21 @@ function toast(message: string, error = false): void {
 async function loadConfig(): Promise<AppConfig> {
   if (isTauri) return invoke<AppConfig>("get_config");
   const saved = localStorage.getItem("mouse-glow-config");
-  return saved ? (JSON.parse(saved) as AppConfig) : defaultConfig();
+  if (!saved) return defaultConfig();
+  const parsed = JSON.parse(saved) as AppConfig;
+  for (const preset of parsed.trails) {
+    preset.shape ??= DEFAULT_CONFIG.trails.find((item) => item.id === preset.id)?.shape ?? "glow";
+  }
+  for (const preset of parsed.clicks) {
+    preset.shape ??= DEFAULT_CONFIG.clicks.find((item) => item.id === preset.id)?.shape ?? "ripple";
+  }
+  for (const preset of DEFAULT_CONFIG.trails) {
+    if (!parsed.trails.some((item) => item.id === preset.id)) parsed.trails.push(structuredClone(preset));
+  }
+  for (const preset of DEFAULT_CONFIG.clicks) {
+    if (!parsed.clicks.some((item) => item.id === preset.id)) parsed.clicks.push(structuredClone(preset));
+  }
+  return parsed;
 }
 
 async function persistConfig(): Promise<void> {
@@ -168,6 +229,26 @@ function colorControl(label: string, value: string, onChange: (value: string) =>
   return wrapper;
 }
 
+function selectControl<T extends string>(
+  label: string,
+  value: T,
+  options: ReadonlyArray<readonly [T, string]>,
+  onChange: (value: T) => void,
+): HTMLElement {
+  const wrapper = make<HTMLDivElement>("div", "control inline-control");
+  wrapper.append(make("label", "", label));
+  const select = make<HTMLSelectElement>("select", "shape-select");
+  for (const [optionValue, optionLabel] of options) {
+    const option = make<HTMLOptionElement>("option", "", optionLabel);
+    option.value = optionValue;
+    option.selected = optionValue === value;
+    select.append(option);
+  }
+  select.addEventListener("change", () => onChange(select.value as T));
+  wrapper.append(select);
+  return wrapper;
+}
+
 function toggleControl(
   label: string,
   description: string,
@@ -255,10 +336,12 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
   for (const preset of presets) {
     const button = make<HTMLButtonElement>("button", `preset-card${preset.id === activeId ? " active" : ""}`);
     const colors = "startColor" in preset ? [preset.startColor, preset.endColor] : [preset.color, preset.endColor];
-    const orb = make<HTMLSpanElement>("span", "preset-orb");
+    const shapeLabel = "startColor" in preset ? TRAIL_SHAPE_LABELS[preset.shape] : CLICK_SHAPE_LABELS[preset.shape];
+    const orb = make<HTMLSpanElement>("span", `preset-orb shape-${preset.shape}`, SHAPE_SYMBOLS[preset.shape]);
     orb.style.background = `radial-gradient(circle at 35% 35%, ${colors[0]}, ${colors[1]} 65%, transparent 72%)`;
     const text = make<HTMLSpanElement>("span", "preset-name");
-    text.append(make("strong", "", preset.name), make("small", "", preset.id === activeId ? "正在使用" : "点击使用"));
+    const state = preset.id === activeId ? "正在使用" : "点击使用";
+    text.append(make("strong", "", preset.name), make("small", "", `${shapeLabel} · ${state}`));
     button.append(orb, text, make("i", "preset-check", preset.id === activeId ? "✓" : ""));
     button.addEventListener("click", () => {
       if (kind === "trail") config.activeTrailId = preset.id;
@@ -321,6 +404,7 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
   if (kind === "trail") {
     const preset = activeTrail(config);
     grid.append(
+      selectControl<TrailShape>("粒子形状", preset.shape, TRAIL_SHAPE_OPTIONS, (value) => { preset.shape = value; changed(true); }),
       rangeControl("拖尾宽度", preset.width, 4, 64, 1, "px", (value) => { preset.width = value; changed(); }),
       rangeControl("存续时间", preset.lifetime, 150, 2500, 50, "ms", (value) => { preset.lifetime = value; changed(); }),
       rangeControl("辉光强度", preset.glow, 0.2, 2, 0.1, "×", (value) => { preset.glow = value; changed(); }),
@@ -333,6 +417,7 @@ function presetEditor(kind: "trail" | "click"): HTMLElement {
   } else {
     const preset = activeClick(config);
     grid.append(
+      selectControl<ClickShape>("点击形状", preset.shape, CLICK_SHAPE_OPTIONS, (value) => { preset.shape = value; changed(true); }),
       rangeControl("扩散范围", preset.radius, 30, 300, 5, "px", (value) => { preset.radius = value; changed(); }),
       rangeControl("持续时间", preset.duration, 150, 2000, 50, "ms", (value) => { preset.duration = value; changed(); }),
       rangeControl("辉光强度", preset.glow, 0.2, 2, 0.1, "×", (value) => { preset.glow = value; changed(); }),

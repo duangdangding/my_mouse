@@ -1,8 +1,12 @@
 export type MouseButton = "left" | "right" | "middle";
+export type TrailShape = "glow" | "petal" | "ribbon" | "spark" | "circuit" | "rune";
+export type ClickShape = "ripple" | "star" | "firefly" | "shard" | "hex" | "magic";
+export type EffectShape = TrailShape | ClickShape;
 
 export interface TrailPreset {
   id: string;
   name: string;
+  shape: TrailShape;
   width: number;
   lifetime: number;
   glow: number;
@@ -16,6 +20,7 @@ export interface TrailPreset {
 export interface ClickPreset {
   id: string;
   name: string;
+  shape: ClickShape;
   radius: number;
   duration: number;
   glow: number;
