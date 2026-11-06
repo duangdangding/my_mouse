@@ -166,7 +166,8 @@ async function persistConfig(): Promise<void> {
   setSaveState("saving");
   try {
     if (isTauri) {
-      config = await invoke<AppConfig>("save_config", { config });
+      // 保留当前配置对象，避免保存响应替换配置后，已有控件继续修改旧对象。
+      await invoke<AppConfig>("save_config", { config });
     } else {
       localStorage.setItem("mouse-glow-config", JSON.stringify(config));
     }
@@ -615,6 +616,21 @@ function aboutSettings(): HTMLElement {
   const title = make<HTMLHeadingElement>("h2", "", "鼠标流光");
   const version = make<HTMLParagraphElement>("p", "about-version", `Mouse Glow · 版本 ${app.dataset.version ?? "0.2.0"}`);
   const description = make<HTMLParagraphElement>("p", "about-description", "一款轻盈、低占用的 Windows／macOS 鼠标拖尾与点击特效工具。设置保存在本机，不上传任何鼠标轨迹或点击数据。");
+  const repository = make<HTMLAnchorElement>("a", "repository-link", "GitHub：github.com/duangdangding/my_mouse ↗");
+  repository.href = "https://github.com/duangdangding/my_mouse";
+  repository.target = "_blank";
+  repository.rel = "noreferrer";
+  repository.addEventListener("click", async (event) => {
+    if (!isTauri) return;
+    event.preventDefault();
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(repository.href);
+    } catch (error) {
+      console.error(error);
+      toast("无法打开 GitHub 仓库，请稍后重试", true);
+    }
+  });
   const updateButton = make<HTMLButtonElement>("button", "primary-button", "检查更新");
   const status = make<HTMLDivElement>("div", "update-status", "更新由签名安装包保护，下载前会验证发布信息。");
   const progress = make<HTMLProgressElement>("progress");
@@ -656,7 +672,7 @@ function aboutSettings(): HTMLElement {
       updateButton.removeAttribute("disabled");
     }
   });
-  card.append(mark, title, version, description, updateButton, progress, status);
+  card.append(mark, title, version, description, repository, updateButton, progress, status);
   const privacy = make<HTMLDivElement>("div", "privacy-card");
   privacy.innerHTML = `<strong>本地优先</strong><p>配置仅保存在当前用户的应用数据目录。程序不需要网络权限，只有手动检查更新时才会访问发布服务器。</p>`;
   wrapper.append(card, privacy);

@@ -171,6 +171,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--purple); ou
 .about-card h2 { margin: 18px 0 0; font-size: 22px; }
 .about-version { margin: 7px 0 0; color: #8a92a8; font-size: 12px; }
 .about-description { max-width: 390px; margin: 22px 0; color: #959db2; font-size: 13px; line-height: 1.9; }
+.repository-link { margin: -6px 0 22px; color: #b3a8ff; font-size: 12px; line-height: 1.7; text-decoration: none; }
+.repository-link:hover { color: #d2caff; text-decoration: underline; }
 .primary-button { min-width: 140px; height: 40px; border: 0; border-radius: 8px; background: linear-gradient(135deg, #9586fa, #7564df); color: white; font-size: 13px; box-shadow: 0 7px 20px rgba(119,94,255,.15); }
 .primary-button:hover { filter: brightness(1.08); }
 .primary-button:disabled { cursor: wait; opacity: .55; }

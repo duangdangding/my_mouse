@@ -206,6 +206,7 @@ pub fn run() {
             show_main(app);
         }))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SharedConfig {
             value: RwLock::new(config),
