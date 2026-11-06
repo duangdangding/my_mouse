@@ -56,6 +56,13 @@ function manifestFiles(directory) {
   });
 }
 
+function artifactNames(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? artifactNames(path) : [entry.name];
+  });
+}
+
 function mergeManifests(directory, output) {
   const files = manifestFiles(directory);
   if (!files.length) throw new Error("找不到任何平台更新清单片段");
@@ -66,15 +73,28 @@ function mergeManifests(directory, output) {
     pub_date: manifests.map((item) => item.pub_date).sort().at(-1),
     platforms: Object.assign({}, ...manifests.map((item) => item.platforms)),
   };
+  const artifacts = artifactNames(directory);
   for (const platform of requiredPlatforms) {
     if (!latest.platforms[platform]) throw new Error(`更新清单缺少平台：${platform}`);
     if (!latest.platforms[platform].signature || !latest.platforms[platform].url) {
       throw new Error(`${platform} 更新签名或地址为空`);
     }
+    const artifact = decodeURIComponent(latest.platforms[platform].url.split("/").at(-1));
+    if (!artifacts.includes(artifact) || !artifacts.includes(`${artifact}.sig`)) {
+      throw new Error(`${platform} 的实际更新包或签名缺失：${artifact}`);
+    }
+  }
+  for (const architecture of ["aarch64", "x64"]) {
+    if (!artifacts.some((name) => name.endsWith(`_${architecture}.dmg`))) {
+      throw new Error(`发布目录缺少 ${architecture} macOS DMG 安装包`);
+    }
+  }
+  if (!artifacts.some((name) => name.endsWith("-setup.exe"))) {
+    throw new Error("发布目录缺少 Windows NSIS 安装包");
   }
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(latest, null, 2)}\n`);
-  console.log(`已合并 ${files.length} 个平台清单：${requiredPlatforms.join("、")}`);
+  console.log(`已合并 ${files.length} 个平台清单，并确认三平台安装包、更新包和签名齐全`);
 }
 
 function copyReleaseNotes(tag, destination) {

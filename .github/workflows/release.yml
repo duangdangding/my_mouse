@@ -106,9 +106,9 @@ jobs:
         with:
           body_path: .generated/RELEASE_NOTES.md
           files: |
-            .generated/release/*.exe
-            .generated/release/*.nsis.zip
-            .generated/release/*.dmg
-            .generated/release/*.app.tar.gz
-            .generated/release/*.sig
+            .generated/release/**/*.exe
+            .generated/release/**/*.nsis.zip
+            .generated/release/**/*.dmg
+            .generated/release/**/*.app.tar.gz
+            .generated/release/**/*.sig
             .generated/release/latest.json
