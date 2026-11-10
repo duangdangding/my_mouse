@@ -308,10 +308,9 @@ pub fn run() {
             tray.build(app)?;
 
             let handle = app.handle().clone();
-            input::start(handle.clone());
-            if let Err(error) = sync_overlay_bounds(handle) {
-                eprintln!("覆盖层初始化失败：{error}");
-            }
+            input::start(handle);
+            // 覆盖层脚本就绪后会调用 sync_overlay_bounds，再扩展并显示窗口，
+            // 避免启动时把尚未加载的页面或错误页铺满整个屏幕。
             let silent = std::env::args().any(|argument| argument == "--silent");
             if !silent {
                 show_main(app.handle());
