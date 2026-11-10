@@ -874,3 +874,4 @@ if (isTauri) {
   });
 }
 render();
+if (isTauri) await invoke("main_window_ready");

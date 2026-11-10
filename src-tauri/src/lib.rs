@@ -4,7 +4,11 @@ mod input;
 
 use config::{AppConfig, ConfigStore};
 use serde::Serialize;
-use std::sync::{Mutex, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, RwLock,
+};
+use std::time::Duration;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
@@ -14,6 +18,22 @@ use tauri::{
 struct SharedConfig {
     value: RwLock<AppConfig>,
     store: Mutex<ConfigStore>,
+}
+
+struct StartupState {
+    silent: bool,
+    main_ready: AtomicBool,
+    overlay_ready: AtomicBool,
+}
+
+impl StartupState {
+    fn new(silent: bool) -> Self {
+        Self {
+            silent,
+            main_ready: AtomicBool::new(false),
+            overlay_ready: AtomicBool::new(false),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -127,6 +147,14 @@ fn show_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn main_window_ready(app: AppHandle, state: State<'_, StartupState>) {
+    state.main_ready.store(true, Ordering::Release);
+    if !state.silent {
+        show_main(&app);
+    }
+}
+
+#[tauri::command]
 fn get_platform() -> &'static str {
     std::env::consts::OS
 }
@@ -147,7 +175,10 @@ fn open_input_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn sync_overlay_bounds(app: AppHandle) -> Result<ScreenBounds, String> {
+fn sync_overlay_bounds(
+    app: AppHandle,
+    state: State<'_, StartupState>,
+) -> Result<ScreenBounds, String> {
     let bounds = virtual_screen_bounds(&app);
     let overlay = app
         .get_webview_window("overlay")
@@ -162,6 +193,7 @@ fn sync_overlay_bounds(app: AppHandle) -> Result<ScreenBounds, String> {
     overlay
         .show()
         .map_err(|error| format!("无法显示特效覆盖层：{error}"))?;
+    state.overlay_ready.store(true, Ordering::Release);
     let _ = app.emit("overlay-bounds", bounds);
     Ok(bounds)
 }
@@ -253,6 +285,38 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+fn schedule_startup_recovery(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        // 离线首次导航偶发失败时，用有限次重载代替用户手动重新打开。
+        // 页面一旦报告就绪便不再重载，避免干扰正常启动和后续使用。
+        for (attempt, delay) in [1500, 3000, 6000].into_iter().enumerate() {
+            std::thread::sleep(Duration::from_millis(delay));
+            let handle = handle.clone();
+            let callback_handle = handle.clone();
+            let final_attempt = attempt == 2;
+            let _ = handle.run_on_main_thread(move || {
+                let state = callback_handle.state::<StartupState>();
+                if !state.main_ready.load(Ordering::Acquire) {
+                    if let Some(window) = callback_handle.get_webview_window("main") {
+                        let _ = window.reload();
+                    }
+                    if final_attempt {
+                        // 持续失败时至少保留普通尺寸的设置窗口，便于查看错误。
+                        show_main(&callback_handle);
+                    }
+                }
+                if !state.overlay_ready.load(Ordering::Acquire) {
+                    if let Some(window) = callback_handle.get_webview_window("overlay") {
+                        // 未就绪的覆盖层始终保持隐藏，错误页不会铺满屏幕。
+                        let _ = window.reload();
+                    }
+                }
+            });
+        }
+    });
+}
+
 fn quit(app: &AppHandle) {
     if let Some(overlay) = app.get_webview_window("overlay") {
         let _ = overlay.destroy();
@@ -265,6 +329,7 @@ pub fn run() {
     let store = ConfigStore::new().unwrap_or_else(|error| panic!("{error}"));
     let config = store.load();
     input::update_config(&config);
+    let silent = std::env::args().any(|argument| argument == "--silent");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _working_directory| {
@@ -278,6 +343,7 @@ pub fn run() {
             value: RwLock::new(config),
             store: Mutex::new(store),
         })
+        .manage(StartupState::new(silent))
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
@@ -285,6 +351,7 @@ pub fn run() {
             set_config_directory,
             reset_config_directory,
             show_settings,
+            main_window_ready,
             get_platform,
             input_permission_granted,
             open_input_settings,
@@ -309,12 +376,7 @@ pub fn run() {
 
             let handle = app.handle().clone();
             input::start(handle);
-            // 覆盖层脚本就绪后会调用 sync_overlay_bounds，再扩展并显示窗口，
-            // 避免启动时把尚未加载的页面或错误页铺满整个屏幕。
-            let silent = std::env::args().any(|argument| argument == "--silent");
-            if !silent {
-                show_main(app.handle());
-            }
+            schedule_startup_recovery(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
