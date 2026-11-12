@@ -329,6 +329,10 @@ pub fn run() {
     let store = ConfigStore::new().unwrap_or_else(|error| panic!("{error}"));
     let config = store.load();
     input::update_config(&config);
+    // 旧调试版可能已写入启动项；仅当路径仍指向当前调试程序时清理。
+    if let Err(error) = autostart::remove_debug_autostart() {
+        eprintln!("清理调试版开机启动项失败：{error}");
+    }
     let silent = std::env::args().any(|argument| argument == "--silent");
 
     tauri::Builder::default()
