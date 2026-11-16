@@ -24,6 +24,7 @@ struct StartupState {
     silent: bool,
     main_ready: AtomicBool,
     overlay_ready: AtomicBool,
+    overlay_bounds: Mutex<Option<ScreenBounds>>,
 }
 
 impl StartupState {
@@ -32,11 +33,12 @@ impl StartupState {
             silent,
             main_ready: AtomicBool::new(false),
             overlay_ready: AtomicBool::new(false),
+            overlay_bounds: Mutex::new(None),
         }
     }
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScreenBounds {
     x: i32,
@@ -180,10 +182,10 @@ fn sync_overlay_bounds(
     state: State<'_, StartupState>,
 ) -> Result<ScreenBounds, String> {
     let bounds = virtual_screen_bounds(&app);
+    apply_overlay_bounds(&app, &state, bounds, true)?;
     let overlay = app
         .get_webview_window("overlay")
         .ok_or_else(|| "找不到特效覆盖层".to_string())?;
-    set_overlay_bounds(&overlay, bounds)?;
     overlay
         .set_ignore_cursor_events(true)
         .map_err(|error| format!("无法设置鼠标穿透：{error}"))?;
@@ -194,8 +196,30 @@ fn sync_overlay_bounds(
         .show()
         .map_err(|error| format!("无法显示特效覆盖层：{error}"))?;
     state.overlay_ready.store(true, Ordering::Release);
-    let _ = app.emit("overlay-bounds", bounds);
     Ok(bounds)
+}
+
+fn apply_overlay_bounds(
+    app: &AppHandle,
+    state: &StartupState,
+    bounds: ScreenBounds,
+    force: bool,
+) -> Result<bool, String> {
+    let mut current = state
+        .overlay_bounds
+        .lock()
+        .map_err(|_| "无法锁定覆盖层尺寸".to_string())?;
+    if !force && *current == Some(bounds) {
+        return Ok(false);
+    }
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "找不到特效覆盖层".to_string())?;
+    set_overlay_bounds(&overlay, bounds)?;
+    *current = Some(bounds);
+    drop(current);
+    let _ = app.emit("overlay-bounds", bounds);
+    Ok(true)
 }
 
 #[cfg(windows)]
@@ -317,6 +341,29 @@ fn schedule_startup_recovery(app: &AppHandle) {
     });
 }
 
+fn watch_display_changes(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let callback_handle = handle.clone();
+        if handle
+            .run_on_main_thread(move || {
+                let state = callback_handle.state::<StartupState>();
+                if !state.overlay_ready.load(Ordering::Acquire) {
+                    return;
+                }
+                // 热插拔、显示器开关和主屏切换都会改变虚拟桌面边界。
+                // 仅在边界确实变化时调整覆盖层，避免无效重绘和窗口闪烁。
+                let bounds = virtual_screen_bounds(&callback_handle);
+                let _ = apply_overlay_bounds(&callback_handle, &state, bounds, false);
+            })
+            .is_err()
+        {
+            break;
+        }
+    });
+}
+
 fn quit(app: &AppHandle) {
     if let Some(overlay) = app.get_webview_window("overlay") {
         let _ = overlay.destroy();
@@ -381,6 +428,7 @@ pub fn run() {
             let handle = app.handle().clone();
             input::start(handle);
             schedule_startup_recovery(app.handle());
+            watch_display_changes(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
